@@ -19,6 +19,7 @@
     "graphql": "^16.14.2",
     "graphql-tag": "^2.12.7",
     "ioredis": "^5.11.1",
+    "mongoose": "^9.11.4",
     "zod": "^4.6.5"
   },
   "devDependencies": {

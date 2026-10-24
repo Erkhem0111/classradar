@@ -6,8 +6,11 @@ import { expressMiddleware } from "@as-integrations/express5";
 import express from "express";
 import { env, manifest } from "./config.ts";
 import { type Context, createContext } from "./context.ts";
+import { connectMongo, disconnectMongo } from "./db.ts";
 import { joinErxesGateway } from "./gateway.ts";
 import { resolvers, typeDefs } from "./graphql/schema.ts";
+
+await connectMongo();
 
 const app = express();
 app.disable("x-powered-by");
@@ -40,6 +43,7 @@ console.log(`${manifest.name} joined the erxes gateway as ${address}`);
 
 const shutdown = async () => {
   await apollo.stop();
+  await disconnectMongo();
   process.exit(0);
 };
 process.once("SIGINT", shutdown);

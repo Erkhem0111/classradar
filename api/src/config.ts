@@ -28,7 +28,7 @@ const envSchema = z.object({
   REDIS_HOST: z.string().default("localhost"),
   REDIS_PORT: z.coerce.number().int().default(6379),
   REDIS_PASSWORD: optional,
-  MONGO_URL: optional,
+  MONGO_URL: z.string().default("mongodb://localhost:27017/erxes"),
   UI_ENTRY_URL: optional,
   LOAD_BALANCER_ADDRESS: optional,
   RELEASE_VERSION: optional,
