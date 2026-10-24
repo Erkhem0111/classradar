@@ -3,7 +3,7 @@ import { IconAlertTriangle, IconRadar, IconRefresh, IconX } from "@tabler/icons-
 // Root imports on purpose: core-ui shares `erxes-ui` as a Module Federation
 // singleton keyed on the bare specifier.
 import { Badge, Button, Card, Empty, Input, Label, ScrollArea, Tooltip, cn } from "erxes-ui";
-import { useEffect, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import type { ClassradarDashboardQuery } from "~/gql/graphql";
 import { CLASS_RADAR_QUERY } from "../graphql";
 import { RadarLoading } from "./RadarLoading";
@@ -385,6 +385,36 @@ const TopErrors = ({ items }: { items: ClassradarDashboardQuery["classradarTopEr
   );
 };
 
+// The design's dark violet room, made by switching this page to erxes's own
+// dark theme and pointing its tokens at the design's colors: every erxes-ui
+// component below picks them up, no extra styling.
+const RADAR_TOKENS = {
+  "--background": "#120A26",
+  "--foreground": "#F1EEFA",
+  "--primary": "#8A63FF",
+  "--primary-foreground": "#FFFFFF",
+  "--secondary": "#2A1A56",
+  "--muted": "#1E1040",
+  "--muted-foreground": "#A9A3BF",
+  "--accent": "#24124F",
+  "--border": "#2E2252",
+  "--input": "#2E2252",
+  "--ring": "#8A63FF",
+  "--success": "#3FE0B0",
+  "--warning": "#FFB547",
+  "--destructive": "#FF7A7A",
+  background: "radial-gradient(1100px 600px at 50% 0%, #24124F 0%, #0B0716 62%)",
+} as CSSProperties;
+
+const RadarTheme = ({ children }: { children: ReactNode }) => (
+  <div
+    className="dark classradar:flex classradar:h-full classradar:flex-col classradar:text-foreground"
+    style={RADAR_TOKENS}
+  >
+    {children}
+  </div>
+);
+
 export const RadarDashboard = () => {
   const [classCode, setClassCode] = useState("10A");
   const [draft, setDraft] = useState("10A");
@@ -400,7 +430,13 @@ export const RadarDashboard = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  if ((loading && !data) || (!minElapsed && !error)) return <RadarLoading />;
+  if ((loading && !data) || (!minElapsed && !error)) {
+    return (
+      <RadarTheme>
+        <RadarLoading />
+      </RadarTheme>
+    );
+  }
 
   const seats = data?.classradarSeats ?? [];
   const count = (status: Status) => seats.filter((seat) => seat.status === status).length;
@@ -409,96 +445,100 @@ export const RadarDashboard = () => {
   const teacherEmail = data?.classradarStatus.userEmail;
 
   return (
-    <Tooltip.Provider delayDuration={200}>
-      <div className="classradar:mx-auto classradar:flex classradar:h-full classradar:w-full classradar:max-w-7xl classradar:flex-col classradar:gap-4 classradar:overflow-auto classradar:p-4 classradar:md:p-6">
-        <div className="classradar:flex classradar:flex-wrap classradar:items-center classradar:justify-between classradar:gap-3">
-          <form
-            className="classradar:flex classradar:flex-wrap classradar:items-center classradar:gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const next = draft.trim();
-              if (next) setClassCode(next);
-            }}
-          >
-            <Label htmlFor="classradar-class">Анги</Label>
-            <Input
-              id="classradar-class"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onBlur={() => draft.trim() && setClassCode(draft.trim())}
-              className="classradar:w-24 classradar:font-semibold"
-            />
-            <span className="classradar:text-sm classradar:text-muted-foreground">
-              {seats.length - count("absent")}/{seats.length} сурагч ирсэн
-            </span>
-            <Badge variant={error ? "destructive" : "success"} className="classradar:gap-1.5">
-              <span className="classradar:relative classradar:flex classradar:size-2">
-                <span className="classradar:absolute classradar:inset-0 classradar:rounded-full classradar:bg-current" />
-                {!error && (
-                  <span className="classradar-ping classradar:absolute classradar:inset-0 classradar:rounded-full classradar:border-2 classradar:border-current" />
-                )}
+    <RadarTheme>
+      <Tooltip.Provider delayDuration={200}>
+        <div className="classradar:mx-auto classradar:flex classradar:h-full classradar:w-full classradar:max-w-7xl classradar:flex-col classradar:gap-4 classradar:overflow-auto classradar:p-4 classradar:md:p-6">
+          <div className="classradar:flex classradar:flex-wrap classradar:items-center classradar:justify-between classradar:gap-3">
+            <form
+              className="classradar:flex classradar:flex-wrap classradar:items-center classradar:gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const next = draft.trim();
+                if (next) setClassCode(next);
+              }}
+            >
+              <Label htmlFor="classradar-class">Анги</Label>
+              <Input
+                id="classradar-class"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onBlur={() => draft.trim() && setClassCode(draft.trim())}
+                className="classradar:w-24 classradar:font-semibold"
+              />
+              <span className="classradar:text-sm classradar:text-muted-foreground">
+                {seats.length - count("absent")}/{seats.length} сурагч ирсэн
               </span>
-              {error ? "Холболт тасарсан" : "Шууд"}
-            </Badge>
-          </form>
-          {teacherEmail && (
-            <Badge variant="secondary" className="classradar:gap-1.5">
-              <IconRadar className="classradar:size-3.5" />
-              Багш · {teacherEmail}
-            </Badge>
-          )}
-        </div>
-
-        <div className="classradar:flex classradar:flex-wrap classradar:gap-3">
-          {STATUSES.map((status) => (
-            <StatTile key={status} status={status} count={count(status)} />
-          ))}
-        </div>
-
-        <div className="classradar:flex classradar:min-h-96 classradar:flex-1 classradar:flex-wrap classradar:gap-4 classradar:lg:flex-nowrap">
-          <div className="classradar:flex classradar:min-w-0 classradar:flex-[999_1_540px] classradar:flex-col">
-            {error && !data ? (
-              <Empty className="classradar:rounded-xl classradar:border classradar:border-border">
-                <Empty.Header>
-                  <Empty.Media variant="icon">
-                    <IconAlertTriangle />
-                  </Empty.Media>
-                  <Empty.Title>Мэдээлэл авч чадсангүй</Empty.Title>
-                  <Empty.Description>{error.message}</Empty.Description>
-                </Empty.Header>
-                <Empty.Content>
-                  <Button onClick={() => refetch()}>
-                    <IconRefresh />
-                    Дахин оролдох
-                  </Button>
-                </Empty.Content>
-              </Empty>
-            ) : seats.length === 0 ? (
-              <Empty className="classradar:rounded-xl classradar:border classradar:border-border">
-                <Empty.Header>
-                  <Empty.Media variant="icon">
-                    <IconRadar />
-                  </Empty.Media>
-                  <Empty.Title>{classCode} ангид сурагч алга</Empty.Title>
-                  <Empty.Description>
-                    Сурагчид VS Code extension-ээ асаагаад файлаа хадгалмагц энд гарч ирнэ.
-                  </Empty.Description>
-                </Empty.Header>
-              </Empty>
-            ) : (
-              <SeatMap seats={seats} selected={selected} onPick={setSelected} />
+              <Badge variant={error ? "destructive" : "success"} className="classradar:gap-1.5">
+                <span className="classradar:relative classradar:flex classradar:size-2">
+                  <span className="classradar:absolute classradar:inset-0 classradar:rounded-full classradar:bg-current" />
+                  {!error && (
+                    <span className="classradar-ping classradar:absolute classradar:inset-0 classradar:rounded-full classradar:border-2 classradar:border-current" />
+                  )}
+                </span>
+                {error ? "Холболт тасарсан" : "Шууд"}
+              </Badge>
+            </form>
+            {teacherEmail && (
+              <Badge variant="secondary" className="classradar:gap-1.5">
+                <IconRadar className="classradar:size-3.5" />
+                Багш · {teacherEmail}
+              </Badge>
             )}
           </div>
 
-          <ScrollArea className="classradar:min-h-0 classradar:flex-[1_1_300px] classradar:lg:max-w-sm">
-            <div className="classradar:flex classradar:flex-col classradar:gap-4">
-              {selectedSeat && <SeatDetail seat={selectedSeat} onClose={() => setSelected(null)} />}
-              <AttentionList seats={attention} selected={selected} onPick={setSelected} />
-              <TopErrors items={data?.classradarTopErrors ?? []} />
+          <div className="classradar:flex classradar:flex-wrap classradar:gap-3">
+            {STATUSES.map((status) => (
+              <StatTile key={status} status={status} count={count(status)} />
+            ))}
+          </div>
+
+          <div className="classradar:flex classradar:min-h-96 classradar:flex-1 classradar:flex-wrap classradar:gap-4 classradar:lg:flex-nowrap">
+            <div className="classradar:flex classradar:min-w-0 classradar:flex-[999_1_540px] classradar:flex-col">
+              {error && !data ? (
+                <Empty className="classradar:rounded-xl classradar:border classradar:border-border">
+                  <Empty.Header>
+                    <Empty.Media variant="icon">
+                      <IconAlertTriangle />
+                    </Empty.Media>
+                    <Empty.Title>Мэдээлэл авч чадсангүй</Empty.Title>
+                    <Empty.Description>{error.message}</Empty.Description>
+                  </Empty.Header>
+                  <Empty.Content>
+                    <Button onClick={() => refetch()}>
+                      <IconRefresh />
+                      Дахин оролдох
+                    </Button>
+                  </Empty.Content>
+                </Empty>
+              ) : seats.length === 0 ? (
+                <Empty className="classradar:rounded-xl classradar:border classradar:border-border">
+                  <Empty.Header>
+                    <Empty.Media variant="icon">
+                      <IconRadar />
+                    </Empty.Media>
+                    <Empty.Title>{classCode} ангид сурагч алга</Empty.Title>
+                    <Empty.Description>
+                      Сурагчид VS Code extension-ээ асаагаад файлаа хадгалмагц энд гарч ирнэ.
+                    </Empty.Description>
+                  </Empty.Header>
+                </Empty>
+              ) : (
+                <SeatMap seats={seats} selected={selected} onPick={setSelected} />
+              )}
             </div>
-          </ScrollArea>
+
+            <ScrollArea className="classradar:min-h-0 classradar:flex-[1_1_300px] classradar:lg:max-w-sm">
+              <div className="classradar:flex classradar:flex-col classradar:gap-4">
+                {selectedSeat && (
+                  <SeatDetail seat={selectedSeat} onClose={() => setSelected(null)} />
+                )}
+                <AttentionList seats={attention} selected={selected} onPick={setSelected} />
+                <TopErrors items={data?.classradarTopErrors ?? []} />
+              </div>
+            </ScrollArea>
+          </div>
         </div>
-      </div>
-    </Tooltip.Provider>
+      </Tooltip.Provider>
+    </RadarTheme>
   );
 };
