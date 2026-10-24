@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { fetchHelp, revealHint, sendReport } from "./client";
-import { NOT_SENT_YET, OFFLINE, REVEAL_COMMAND, renderHelp } from "./hover";
+import { NOT_SENT_YET, OFFLINE, REVEAL_COMMAND, SHOW_TIP_COMMAND, renderHelp } from "./hover";
 import { type StudentIdentity, SentTracker, buildReport, reportKey } from "./payload";
 
 // Language servers often publish diagnostics a moment after the save, so a
@@ -102,11 +102,24 @@ export const activate = (context: vscode.ExtensionContext) => {
     );
   };
 
+  // Which tip each error's hover shows; unset = the newest revealed one.
+  const tipViews = new Map<string, number>();
+
   const markdown = (value: string) => {
     const md = new vscode.MarkdownString(value);
     md.supportHtml = true;
-    md.isTrusted = { enabledCommands: [REVEAL_COMMAND] };
+    md.isTrusted = { enabledCommands: [REVEAL_COMMAND, SHOW_TIP_COMMAND] };
     return md;
+  };
+
+  // showHover opens at the cursor, so move it to the error first.
+  const reopenHover = async (line: unknown, character: unknown) => {
+    const editor = vscode.window.activeTextEditor;
+    if (editor && typeof line === "number" && typeof character === "number") {
+      const position = new vscode.Position(line, character);
+      editor.selection = new vscode.Selection(position, position);
+    }
+    await vscode.commands.executeCommand("editor.action.showHover");
   };
 
   const hoverProvider: vscode.HoverProvider = {
@@ -127,9 +140,13 @@ export const activate = (context: vscode.ExtensionContext) => {
       if (!errorId) return new vscode.Hover(markdown(NOT_SENT_YET), diagnostic.range);
 
       const help = await fetchHelp(gatewayUrl, errorId, identity.studentEmail);
-      if (!help.ok) log.appendLine(`✗ тайлбар авч чадсангүй: ${help.error}`);
+      if (!help.ok) {
+        log.appendLine(`✗ тайлбар авч чадсангүй: ${help.error}`);
+        return new vscode.Hover(markdown(OFFLINE), diagnostic.range);
+      }
+      const view = tipViews.get(errorId) ?? help.value.hintsUsed - 1;
       return new vscode.Hover(
-        markdown(help.ok ? renderHelp(help.value, diagnostic.range.start) : OFFLINE),
+        markdown(renderHelp(help.value, diagnostic.range.start, view)),
         diagnostic.range,
       );
     },
@@ -152,13 +169,16 @@ export const activate = (context: vscode.ExtensionContext) => {
         log.appendLine(
           `💡 зөвлөгөө ${result.value.hintsUsed}/${result.value.hintsTotal} (${errorId})`,
         );
-        // showHover opens at the cursor, so move it to the error first.
-        const editor = vscode.window.activeTextEditor;
-        if (editor && typeof line === "number" && typeof character === "number") {
-          const position = new vscode.Position(line, character);
-          editor.selection = new vscode.Selection(position, position);
-        }
-        await vscode.commands.executeCommand("editor.action.showHover");
+        tipViews.delete(errorId);
+        await reopenHover(line, character);
+      },
+    ),
+    vscode.commands.registerCommand(
+      SHOW_TIP_COMMAND,
+      async (errorId: unknown, index: unknown, line: unknown, character: unknown) => {
+        if (typeof errorId !== "string" || typeof index !== "number") return;
+        tipViews.set(errorId, index);
+        await reopenHover(line, character);
       },
     ),
     status,
