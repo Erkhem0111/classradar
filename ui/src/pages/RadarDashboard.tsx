@@ -483,7 +483,7 @@ const RADAR_TOKENS = {
   background: "radial-gradient(1100px 600px at 50% 0%, #24124F 0%, #0B0716 62%)",
 } as CSSProperties;
 
-const RadarTheme = ({ children }: { children: ReactNode }) => (
+export const RadarTheme = ({ children }: { children: ReactNode }) => (
   <div
     className="dark classradar:flex classradar:h-full classradar:flex-col classradar:text-foreground"
     style={RADAR_TOKENS}

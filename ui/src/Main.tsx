@@ -10,6 +10,12 @@ const IndexPage = lazy(() =>
     default: module.IndexPage,
   })),
 );
+const LeaderboardPage = lazy(() =>
+  import("./pages/LeaderboardPage").then((module) => ({ default: module.LeaderboardPage })),
+);
+const InterviewPage = lazy(() =>
+  import("./pages/InterviewPage").then((module) => ({ default: module.InterviewPage })),
+);
 const SettingsPage = lazy(() =>
   import("./pages/SettingsPage").then((module) => ({ default: module.SettingsPage })),
 );
@@ -21,6 +27,8 @@ export const Classradar = () => (
     <Suspense fallback={<div role="status">Loading…</div>}>
       <Routes>
         <Route index element={<IndexPage />} />
+        <Route path="leaderboard" element={<LeaderboardPage />} />
+        <Route path="interview" element={<InterviewPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Routes>
     </Suspense>

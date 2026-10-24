@@ -1,4 +1,4 @@
-import { IconRadar, IconSettings } from "@tabler/icons-react";
+import { IconMessages, IconRadar, IconSettings, IconTrophy } from "@tabler/icons-react";
 // Root import on purpose: core-ui shares `erxes-ui` as a Module Federation
 // singleton keyed on the bare specifier, so deep imports would bundle a second
 // private copy instead of reusing the host's.
@@ -13,6 +13,16 @@ export const Navigation = () => (
           name={manifest.title}
           icon={IconRadar}
           path={`/${manifest.ui.path}`}
+        />
+        <NavigationMenuLinkItem
+          name="Ярилцлага"
+          icon={IconMessages}
+          path={`/${manifest.ui.path}/interview`}
+        />
+        <NavigationMenuLinkItem
+          name="Leaderboard"
+          icon={IconTrophy}
+          path={`/${manifest.ui.path}/leaderboard`}
         />
         <NavigationMenuLinkItem
           name="Settings"
