@@ -83,14 +83,27 @@ const roster: [seat: string, name: string, email: string, plan: Plan][] = [
   ["С24", "Цэцгээ", "tsetsgee@school.mn", { kind: "working" }],
 ];
 
-// Earlier errors in the day that were since fixed, so repeats add up.
-const fixedEarlier: [email: string, error: MockError][] = [
-  ["bat@school.mn", nameError("totl", 4)],
-  ["saraa@school.mn", nameError("cnt", 12)],
-  ["nomin@school.mn", unclosed(2)],
-  ["maral@school.mn", nameError("Total", 2)],
-  ["oyu@school.mn", unclosed(1)],
-  ["munkh@school.mn", typeError(4)],
+// Earlier errors in the day that were since fixed (the student's next clean
+// save marks them fixed), with the tips they needed: fewer tips, more points.
+const fixedEarlier: [email: string, error: MockError, tips: number][] = [
+  ["bat@school.mn", nameError("totl", 4), 0],
+  ["bat@school.mn", typeError(9), 1],
+  ["bat@school.mn", unclosed(3), 0],
+  ["saraa@school.mn", nameError("cnt", 12), 1],
+  ["saraa@school.mn", indentError(6), 0],
+  ["nomin@school.mn", unclosed(2), 0],
+  ["nomin@school.mn", nameError("sum1", 5), 0],
+  ["nomin@school.mn", typeError(7), 0],
+  ["nomin@school.mn", indentError(3), 1],
+  ["maral@school.mn", nameError("Total", 2), 2],
+  ["oyu@school.mn", unclosed(1), 3],
+  ["munkh@school.mn", typeError(4), 1],
+  ["munkh@school.mn", nameError("lst", 8), 2],
+  ["khulan@school.mn", indentError(5), 0],
+  ["khulan@school.mn", unclosed(4), 1],
+  ["anu@school.mn", typeError(2), 2],
+  ["bilguun@school.mn", nameError("itmes", 2), 0],
+  ["tsetsgee@school.mn", unclosed(6), 1],
 ];
 
 const call = async <T>(query: string, variables: Record<string, unknown>, field: string) => {
@@ -156,8 +169,9 @@ for (const [seat, name, email] of roster) {
 
 const seatOf = new Map(roster.map(([seat, , email]) => [email, seat]));
 let sent = 0;
-for (const [email, error] of fixedEarlier) {
-  await report(email, seatOf.get(email) ?? "", error);
+for (const [email, error, tips] of fixedEarlier) {
+  const { _id } = await report(email, seatOf.get(email) ?? "", error);
+  for (let tip = 0; tip < tips; tip += 1) await helpMutation("classradarRevealHint", _id, email);
   sent += 1;
 }
 

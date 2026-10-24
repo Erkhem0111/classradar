@@ -17,6 +17,7 @@ import {
   clampSnippet,
   normalizeErrorKey,
   startOfTodayUlaanbaatar,
+  startOfWeekUlaanbaatar,
 } from "../models/errors.ts";
 
 // Every type and operation is prefixed with the plugin name: the gateway
@@ -144,12 +145,32 @@ export const typeDefs = gql`
     explanation: String
   }
 
+  enum ClassradarLeaderboardRange {
+    week
+    all
+  }
+
+  type ClassradarLeaderboardRow {
+    studentEmail: String!
+    name: String
+    seat: String
+    "10 per fixed error, plus 15/10/5 when fixed with 0/1/2 tips."
+    score: Int!
+    fixed: Int!
+    understood: Int!
+  }
+
   type Query {
     classradarStatus: ClassradarStatus!
     classradarErrorHelp(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
     "Today's (Ulaanbaatar time) three most repeated errors in a class."
     classradarTopErrors(classCode: String!): [ClassradarTopError!]!
     classradarAiStatus: ClassradarAiStatus!
+    "Students ranked by errors they fixed themselves (teacher view)."
+    classradarLeaderboard(
+      classCode: String!
+      range: ClassradarLeaderboardRange!
+    ): [ClassradarLeaderboardRow!]!
     "Live seat map of a class (teacher view)."
     classradarSeats(classCode: String!): [ClassradarSeat!]!
   }
@@ -279,6 +300,53 @@ export const resolvers: GraphQLResolverMap<Context> = {
 
     classradarErrorHelp: async (_parent, args: HelpArgs, { subdomain }) =>
       toHelp(await ClassradarErrors.findOne(ownedErrorFilter(args, subdomain)).lean(), subdomain),
+
+    classradarLeaderboard: async (
+      _parent,
+      args: { classCode: string; range: "week" | "all" },
+      context,
+    ) => {
+      requireUser(context);
+      const { subdomain } = context;
+      const classCode = args.classCode.trim();
+      const since = args.range === "week" ? startOfWeekUlaanbaatar() : new Date(0);
+      const rows = await ClassradarErrors.aggregate<{
+        _id: string;
+        score: number;
+        fixed: number;
+        understood: number;
+      }>([
+        { $match: { subdomain, classCode, fixedAt: { $ne: null, $gte: since } } },
+        {
+          $group: {
+            _id: "$studentEmail",
+            fixed: { $sum: 1 },
+            understood: { $sum: { $cond: [{ $ne: ["$understoodAt", null] }, 1, 0] } },
+            score: {
+              $sum: {
+                $add: [10, { $multiply: [5, { $max: [0, { $subtract: [3, "$hintsUsed"] }] }] }],
+              },
+            },
+          },
+        },
+        { $sort: { score: -1, fixed: -1, _id: 1 } },
+        { $limit: 50 },
+      ]);
+      const students = await ClassradarStudents.find({
+        subdomain,
+        classCode,
+        email: { $in: rows.map((row) => row._id) },
+      }).lean();
+      const byEmail = new Map(students.map((student) => [student.email, student]));
+      return rows.map((row) => ({
+        studentEmail: row._id,
+        name: byEmail.get(row._id)?.name ?? null,
+        seat: byEmail.get(row._id)?.seat ?? null,
+        score: row.score,
+        fixed: row.fixed,
+        understood: row.understood,
+      }));
+    },
 
     classradarAiStatus: async (_parent, _args, context) => {
       requireUser(context);
@@ -473,6 +541,13 @@ export const resolvers: GraphQLResolverMap<Context> = {
         { $set: { lastSeenAt: now, ...(seat ? { seat } : {}) } },
         { upsert: true },
       );
+      // A clean save after errors: the student fixed them (leaderboard).
+      if (!hasError) {
+        await ClassradarErrors.updateMany(
+          { subdomain, classCode, studentEmail, fixedAt: null },
+          { $set: { fixedAt: now } },
+        );
+      }
       // errorSince keeps the first moment of an unbroken run of errors.
       await ClassradarStudents.updateOne(hasError ? { ...filter, errorSince: null } : filter, {
         $set: { errorSince: hasError ? now : null },

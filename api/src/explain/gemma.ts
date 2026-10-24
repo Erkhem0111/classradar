@@ -72,6 +72,19 @@ export const parseGemmaReply = (content: string, message = ""): Explanation | nu
  * request is retried with the prompt inline. Returns the raw reply text, or
  * null on any failure or timeout.
  */
+// The student-facing calls are anonymous for now, so cap Gemma traffic for the
+// whole API: past the cap, callers get null and fall back to the built-in
+// explanations instead of spending the API key's quota.
+const GEMMA_CALLS_PER_MINUTE = 20;
+const recentCalls: number[] = [];
+
+export const takeGemmaSlot = (now = Date.now()) => {
+  while (recentCalls.length && now - (recentCalls[0] ?? 0) >= 60_000) recentCalls.shift();
+  if (recentCalls.length >= GEMMA_CALLS_PER_MINUTE) return false;
+  recentCalls.push(now);
+  return true;
+};
+
 export const completeJson = async (
   config: GemmaConfig,
   systemPrompt: string,
@@ -87,6 +100,10 @@ export const completeJson = async (
     },
     { messages: [{ role: "user", content: `${systemPrompt}\n\n${user}` }] },
   ];
+  if (!takeGemmaSlot()) {
+    console.warn("classradar: Gemma rate limit reached, using built-in explanation");
+    return null;
+  }
   const deadline = AbortSignal.timeout(config.timeoutMs);
   // WSL and some school networks drop the odd connection: retry once while
   // the deadline allows.

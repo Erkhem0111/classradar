@@ -21,6 +21,8 @@ const errorSchema = new Schema(
     hintsUsed: { type: Number, default: 0 },
     // Set when the student presses "Ойлголоо" (understood) in the hover.
     understoodAt: { type: Date, default: null },
+    // Set when the student's file next saves clean: the error was fixed.
+    fixedAt: { type: Date, default: null },
     createdAt: { type: Date, default: () => new Date() },
   },
   { collection: "classradar_errors", versionKey: false },
@@ -51,6 +53,13 @@ export const clampSnippet = (snippet: string | null | undefined) =>
   snippet ? snippet.split(/\r?\n/).slice(0, 3).join("\n") : null;
 
 const UB_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/** Monday 00:00 of the current week in Ulaanbaatar (UTC+8). */
+export const startOfWeekUlaanbaatar = (now = new Date()) => {
+  const day = startOfTodayUlaanbaatar(now);
+  const weekday = (new Date(day.getTime() + UB_OFFSET_MS).getUTCDay() + 6) % 7;
+  return new Date(day.getTime() - weekday * 24 * 60 * 60 * 1000);
+};
 
 /** Start of the current day in Ulaanbaatar (UTC+8). */
 export const startOfTodayUlaanbaatar = (now = new Date()) => {

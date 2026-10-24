@@ -76,3 +76,16 @@ export const PING_GEMMA_MUTATION = gql(`
     }
   }
 `);
+
+export const LEADERBOARD_QUERY = gql(`
+  query classradarLeaderboard($classCode: String!, $range: ClassradarLeaderboardRange!) {
+    classradarLeaderboard(classCode: $classCode, range: $range) {
+      studentEmail
+      name
+      seat
+      score
+      fixed
+      understood
+    }
+  }
+`);

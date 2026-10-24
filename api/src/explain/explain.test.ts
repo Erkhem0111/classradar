@@ -136,3 +136,13 @@ test("drops Gemma 4's <thought> block and rejects replies that leak the fix", ()
     null,
   );
 });
+
+test("Gemma calls are capped per minute", async () => {
+  const { takeGemmaSlot } = await import("./gemma.ts");
+  // Far enough ahead that slots taken by earlier tests have expired.
+  const start = Date.now() + 10 * 60_000;
+  let granted = 0;
+  for (let i = 0; i < 30; i += 1) if (takeGemmaSlot(start + i)) granted += 1;
+  assert.equal(granted, 20);
+  assert.equal(takeGemmaSlot(start + 61_000), true);
+});
