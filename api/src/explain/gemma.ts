@@ -64,29 +64,40 @@ export const askGemma = async (
   config: GemmaConfig,
   message: string,
 ): Promise<Explanation | null> => {
+  const user = `Алдааны мессеж: ${message}`;
+  // Ollama takes a system message and JSON mode; Gemma on Google's API takes
+  // neither, so a rejected request is retried with the prompt inline. The
+  // reply parser copes with JSON wrapped in prose either way.
+  const attempts = [
+    {
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: user },
+      ],
+    },
+    { messages: [{ role: "user", content: `${SYSTEM_PROMPT}\n\n${user}` }] },
+  ];
+  const deadline = AbortSignal.timeout(config.timeoutMs);
   try {
-    const response = await fetch(`${config.url.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: config.model,
-        temperature: 0.3,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: `Алдааны мессеж: ${message}` },
-        ],
-      }),
-      signal: AbortSignal.timeout(config.timeoutMs),
-    });
-    if (!response.ok) return null;
-    const completion = completionSchema.safeParse(await response.json());
-    return completion.success
-      ? parseGemmaReply(completion.data.choices[0]?.message.content ?? "")
-      : null;
+    for (const attempt of attempts) {
+      const response = await fetch(`${config.url.replace(/\/$/, "")}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
+        },
+        body: JSON.stringify({ model: config.model, temperature: 0.3, ...attempt }),
+        signal: deadline,
+      });
+      if (response.status === 400) continue;
+      if (!response.ok) return null;
+      const completion = completionSchema.safeParse(await response.json());
+      return completion.success
+        ? parseGemmaReply(completion.data.choices[0]?.message.content ?? "")
+        : null;
+    }
+    return null;
   } catch {
     return null;
   }

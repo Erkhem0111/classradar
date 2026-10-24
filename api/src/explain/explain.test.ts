@@ -95,3 +95,31 @@ test("tips name the student's exact name or gap, never the compiler's guess", as
   const attr = "AttributeError: 'list' object has no attribute 'push'";
   assert.match(personalize(fallbackExplanation(attr), attr).explanation, /`push`/);
 });
+
+test("askGemma retries with the prompt inline when the API rejects system/JSON mode", async () => {
+  const bodies: string[] = [];
+  const server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      bodies.push(body);
+      if (body.includes('"role":"system"')) {
+        res.statusCode = 400;
+        res.end("{}");
+        return;
+      }
+      res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(good) } }] }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const url = `http://localhost:${(server.address() as AddressInfo).port}/v1`;
+  try {
+    const answer = await askGemma({ url, model: "gemma-4", timeoutMs: 2000 }, "NameError");
+    assert.deepEqual(answer, good);
+    assert.equal(bodies.length, 2);
+    assert.ok(!bodies[1]?.includes("response_format"));
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
