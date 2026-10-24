@@ -52,3 +52,27 @@ export const INTERVIEW_FEEDBACK_MUTATION = gql(`
     }
   }
 `);
+
+export const AI_STATUS_QUERY = gql(`
+  query classradarAiStatus {
+    classradarAiStatus {
+      configured
+      model
+      endpoint
+      cachedExplanations
+      errorsToday
+      students
+    }
+  }
+`);
+
+export const PING_GEMMA_MUTATION = gql(`
+  mutation classradarPingGemma {
+    classradarPingGemma {
+      ok
+      ms
+      title
+      explanation
+    }
+  }
+`);

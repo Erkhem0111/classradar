@@ -6,7 +6,9 @@ import { isValidObjectId } from "mongoose";
 import { manifest } from "../config.ts";
 import type { Context } from "../context.ts";
 import { personalize, tokensAround } from "../explain/fallback.ts";
-import { explainError, explainNow } from "../explain/index.ts";
+import { askGemma } from "../explain/gemma.ts";
+import { explainError, explainNow, gemmaConfig } from "../explain/index.ts";
+import { ClassradarExplanations } from "../models/explanations.ts";
 import { interviewFeedback } from "../explain/interview.ts";
 import { ClassradarStudents } from "../models/students.ts";
 import {
@@ -125,11 +127,29 @@ export const typeDefs = gql`
     source: ClassradarExplanationSource!
   }
 
+  "How the AI part is wired, for the settings page (teacher view)."
+  type ClassradarAiStatus {
+    configured: Boolean!
+    model: String
+    endpoint: String
+    cachedExplanations: Int!
+    errorsToday: Int!
+    students: Int!
+  }
+
+  type ClassradarGemmaPing {
+    ok: Boolean!
+    ms: Int!
+    title: String
+    explanation: String
+  }
+
   type Query {
     classradarStatus: ClassradarStatus!
     classradarErrorHelp(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
     "Today's (Ulaanbaatar time) three most repeated errors in a class."
     classradarTopErrors(classCode: String!): [ClassradarTopError!]!
+    classradarAiStatus: ClassradarAiStatus!
     "Live seat map of a class (teacher view)."
     classradarSeats(classCode: String!): [ClassradarSeat!]!
   }
@@ -140,6 +160,8 @@ export const typeDefs = gql`
     classradarRevealHint(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
     "Records that the student understood the error (first press wins)."
     classradarMarkUnderstood(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
+    "Asks Gemma 4 to explain a sample error right now (teacher view)."
+    classradarPingGemma: ClassradarGemmaPing!
     "Gemma 4 feedback on one interview-practice answer (rule check when Gemma is down)."
     classradarInterviewFeedback(question: String!, answer: String!): ClassradarInterviewFeedback!
     "Sent by the extension after each settled save: present, and with or without an error."
@@ -257,6 +279,28 @@ export const resolvers: GraphQLResolverMap<Context> = {
 
     classradarErrorHelp: async (_parent, args: HelpArgs, { subdomain }) =>
       toHelp(await ClassradarErrors.findOne(ownedErrorFilter(args, subdomain)).lean(), subdomain),
+
+    classradarAiStatus: async (_parent, _args, context) => {
+      requireUser(context);
+      const { subdomain } = context;
+      const [cachedExplanations, errorsToday, students] = await Promise.all([
+        ClassradarExplanations.countDocuments({ subdomain }),
+        ClassradarErrors.countDocuments({
+          subdomain,
+          createdAt: { $gte: startOfTodayUlaanbaatar() },
+        }),
+        ClassradarStudents.countDocuments({ subdomain }),
+      ]);
+      return {
+        configured: Boolean(gemmaConfig),
+        model: gemmaConfig?.model ?? null,
+        // Host only: never echo keys or paths back to the browser.
+        endpoint: gemmaConfig ? new URL(gemmaConfig.url).host : null,
+        cachedExplanations,
+        errorsToday,
+        students,
+      };
+    },
 
     classradarSeats: async (_parent, args: { classCode: string }, context) => {
       requireUser(context);
@@ -395,6 +439,19 @@ export const resolvers: GraphQLResolverMap<Context> = {
         { new: true },
       ).lean();
       return toHelp(updated ?? (await ClassradarErrors.findOne(filter).lean()), subdomain);
+    },
+
+    classradarPingGemma: async (_parent, _args, context) => {
+      requireUser(context);
+      if (!gemmaConfig) return { ok: false, ms: 0, title: null, explanation: null };
+      const started = Date.now();
+      const answer = await askGemma(gemmaConfig, "NameError: name 'totl' is not defined");
+      return {
+        ok: Boolean(answer),
+        ms: Date.now() - started,
+        title: answer?.title ?? null,
+        explanation: answer?.explanation ?? null,
+      };
     },
 
     // TODO(auth): anonymous like the other student calls; nothing is stored.

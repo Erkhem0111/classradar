@@ -33,7 +33,7 @@ export const IndexPage = () => (
         <Button variant="outline" asChild>
           <Link to={`/${path}/settings`}>
             <IconSettings />
-            Settings
+            Тохиргоо
           </Link>
         </Button>
       </PageHeader.End>

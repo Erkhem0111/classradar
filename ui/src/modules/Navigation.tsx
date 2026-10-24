@@ -25,7 +25,7 @@ export const Navigation = () => (
           path={`/${manifest.ui.path}/leaderboard`}
         />
         <NavigationMenuLinkItem
-          name="Settings"
+          name="Тохиргоо"
           icon={IconSettings}
           path={`/${manifest.ui.path}/settings`}
         />
