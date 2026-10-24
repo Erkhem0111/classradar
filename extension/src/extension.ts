@@ -167,7 +167,11 @@ export const activate = (context: vscode.ExtensionContext) => {
       const errorId = sentIds.get(reportKey(report));
       if (!errorId) return undefined;
 
-      const help = await fetchHelp(gatewayUrl, errorId, identity.studentEmail);
+      let help = await fetchHelp(gatewayUrl, errorId, identity.studentEmail);
+      // The card always opens on tip 1, as in the design; seeing it counts.
+      if (help.ok && help.value.hintsUsed === 0) {
+        help = await revealHint(gatewayUrl, errorId, identity.studentEmail);
+      }
       if (!help.ok) {
         log.appendLine(`✗ тайлбар авч чадсангүй: ${help.error}`);
         return new vscode.Hover(markdown(OFFLINE), diagnostic.range);

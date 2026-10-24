@@ -54,27 +54,23 @@ export const renderHelp = (help: ErrorHelp, at: Position, view = help.hintsUsed 
 
   parts.push("", `<sub>Эх алдаа: ${escapeHtml(help.message)}</sub>`);
 
-  const actions: string[] = [];
-  if (shown > 0) {
-    actions.push(commandLink("◀ Өмнөх", SHOW_TIP_COMMAND, [help.errorId, shown - 1, ...position]));
-  }
-  if (shown < help.hints.length - 1) {
-    actions.push(
-      commandLink("Дараагийн ▶", SHOW_TIP_COMMAND, [help.errorId, shown + 1, ...position]),
-    );
-  } else if (help.hintsUsed < help.hintsTotal) {
-    const label = help.hintsUsed === 0 ? "💡 Зөвлөгөө авах" : "Өөр зөвлөгөө ▶";
-    actions.push(
-      commandLink(`${label} (${help.hintsUsed + 1}/${help.hintsTotal})`, REVEAL_COMMAND, [
-        help.errorId,
-        ...position,
-      ]),
-    );
-  }
+  // Always-visible "◀ Өмнөх · n/3 · Дараах ▶" row; arrows are words too so
+  // they are easy to click, and a hollow arrow means "nowhere to go".
+  const prev =
+    shown > 0
+      ? commandLink("◀ Өмнөх", SHOW_TIP_COMMAND, [help.errorId, shown - 1, ...position])
+      : "◁ Өмнөх";
+  const next =
+    shown < help.hints.length - 1
+      ? commandLink("Дараах ▶", SHOW_TIP_COMMAND, [help.errorId, shown + 1, ...position])
+      : help.hintsUsed < help.hintsTotal
+        ? commandLink("Дараах ▶", REVEAL_COMMAND, [help.errorId, ...position])
+        : "Дараах ▷";
+  const actions = [prev, `**${Math.max(shown + 1, 1)}/${help.hintsTotal}**`, next];
   if (!help.understood) {
     actions.push(commandLink("✓ Ойлголоо", UNDERSTOOD_COMMAND, [help.errorId, ...position]));
   }
-  if (actions.length > 0) parts.push("", actions.join("  ·  "));
+  parts.push("", actions.join("  ·  "));
 
   if (help.understood) {
     parts.push("", "✅ **Ойлгосон!** Одоо өөрөө засаад, файлаа хадгалаарай.");
