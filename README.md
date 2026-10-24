@@ -1,74 +1,143 @@
-# Class Radar
+# Ангийн радар (Class Radar)
 
-Classroom error radar for erxes
+**Програмчлал заадаг ангид хэн гацсаныг багшид шууд харуулдаг, сурагчид алдаагаа
+монголоор ойлгуулдаг erxes plugin + VS Code extension.**
 
-An erxes plugin that lives outside the erxes monorepo and joins an erxes stack.
-The shared-library baseline is erxes 3.3.2. Dashed plugin names
-use the same public permission identity in the API and UI; the host must support
-normalized remote discovery and dashed page-module loading (see integration docs).
+Hacktoberfest Hack Day Улаанбаатар 2026 · EdTech · MIT лиценз
 
-| Part   | Path         | Stack                                                    | Dev port |
-| ------ | ------------ | -------------------------------------------------------- | -------- |
-| API    | `api`        | Node.js 22, Express 5 + Apollo Server federated subgraph | 3399     |
-| UI     | `ui`         | React 18 Module Federation remote (Rspack), Tailwind CSS | 3099     |
-| Shared | `erxes.json` | Plugin identity and ports read by both parts             |          |
+## Асуудал ба хэрэглэгч
 
-The UI uses erxes's `erxes-ui`/`ui-modules` design system, installed from npm
-(`@erxes/ui`, `@erxes/ui-modules`; see
-[docs/erxes-integration.md](docs/erxes-integration.md#shared-libraries)). The
-host supplies them at runtime via Module Federation singletons — they are
-installed only so TypeScript and Rspack can resolve the imports.
+- **Сурагч (13–18 нас):** англи хэл дээрх алдааны мессежийг (`NameError`,
+  `';' expected` …) ойлгохгүй, асуухаас ичээд чимээгүй гацдаг.
+- **Багш:** 20–30 сурагчтай ангид хэн гацсаныг, ангид ямар алдаа давтагдаж
+  байгааг харах аргагүй, хамгийн чанга асуусан хүүхдэд л тусалдаг.
 
-## Develop
+## Шийдэл ба функц
+
+| Хэсэг | Юу хийдэг вэ |
+| ----- | ------------ |
+| **VS Code extension** (сурагч) | Файл хадгалахад алдааг барьж erxes руу илгээнэ. Бичиж байх үеийн алдааг тоохгүй (хадгалснаас хойш 1с засваргүй байхад л уншина), файлын **зөвхөн эхний** алдааг авна (бусад нь ихэвчлэн түүний үр дагавар). |
+| **Монгол тайлбар + 3 зөвлөгөө** | Алдаан дээр hover хийхэд гарчиг, энгийн монгол тайлбар, 3 өөр өнцгийн зөвлөгөө (🔍 хаанаас хайх · 🧪 яаж шалгах · 🧠 цаад санаа) нэг нэгээр гарна. **Хариу, засварласан кодыг хэзээ ч хэлэхгүй.** Зөвлөгөө сурагчийн өөрийн бичсэн нэр (`totl`) болон яг байрлалыг (`console` ба `log` хоёрын хооронд) заана. |
+| **Gemma 4** | Тайлбар, зөвлөгөөг Google DeepMind-ийн **Gemma 4** (`gemma-4-26b-a4b-it`) монголоор үүсгэнэ. Алдааны төрөл бүрт нэг удаа асууж, бүх ангид cache-ээр хуваалцана. |
+| **"Ойлголоо"** | Сурагч хэдэн зөвлөгөөгөөр ойлгосныг багшид тэмдэглэнэ. |
+| **Багшийн самбар** (erxes дотор) | Ангийн суудлын зураг: ажиллаж байна / алдаатай / 5+ мин гацсан / ирээгүй, 5с тутам шууд шинэчлэгдэнэ. "Анхаарах" жагсаалт хамгийн удаан гацсан сурагчийг эхэнд гаргана. Өнөөдрийн давтагдсан топ 3 алдаа. Суудал дээр дарахад алдаа, ашигласан зөвлөгөө. |
+
+## Хувийн нууц ба аюулгүй байдал
+
+- Сурагчийн **бүтэн код хэзээ ч явахгүй**: зөвхөн алдааны мессеж ба тэр мөрийн ±1 мөр.
+- Gemma руу **зөвхөн алдааны мессеж** явна, код огт явахгүй.
+- Gemma-гийн хариу код агуулсан, эсвэл компиляторын "Did you mean …" хариуг
+  давтсан бол хүлээж авахгүй.
+
+## Архитектур ба erxes-тэй холбох арга
+
+```
+VS Code extension ──GraphQL──▶ erxes gateway (:4000/graphql) ──▶ classradar API (subgraph, :3399) ──▶ MongoDB
+                                                                         │
+                                                                         └──▶ Gemma 4 (Google AI Studio, OpenAI-compatible API)
+erxes UI (:3001) ──Module Federation──▶ classradar UI remote (:3099) ──▶ gateway ──▶ classradar API
+```
+
+- **API** нь erxes-ийн **Apollo Federation subgraph**. Эхлэхдээ Redis-ээр
+  erxes gateway-д бүртгүүлж (`joinErxesGateway`), бүх query/mutation erxes-ийн
+  нэг `/graphql` endpoint-оор дамжина. Бүх нэр `classradar`-аар эхэлнэ:
+  `classradarReportError`, `classradarHeartbeat`, `classradarErrorHelp`,
+  `classradarRevealHint`, `classradarMarkUnderstood`, `classradarSeats`,
+  `classradarTopErrors`.
+- **UI** нь erxes-ийн **Module Federation remote**. erxes-ийн цэсэнд "Class Radar"
+  болж орж, `erxes-ui` (`Card`, `Badge`, `Tooltip`, `Empty` …) болон erxes-ийн
+  өнгөний токенуудыг ашиглана. Багшийн самбар erxes-ийн нэвтрэлтээр
+  (`context.user`) хамгаалагдсан, нэвтэрсэн багшийн имэйл харагдана.
+- **Өгөгдөл:** `classradar_errors`, `classradar_students`,
+  `classradar_explanations` collection-ууд, tenant (`subdomain`)-аар тусгаарлагдсан.
+- erxes-ийн core кодыг өөрчлөөгүй.
+
+## Технологи
+
+TypeScript · Node.js 22 · Express 5 · Apollo Server/Federation · MongoDB
+(Mongoose) · Redis · React 18 · Rspack Module Federation · Tailwind · erxes-ui ·
+VS Code Extension API · Gemma 4 (Google AI Studio) · zod · node:test
+
+## Суулгах заавар
+
+Шаардлага: Node.js 22, pnpm 9, ажиллаж буй erxes (gateway :4000, UI :3001, MongoDB, Redis).
 
 ```sh
 pnpm install
-cp .env.example .env
-pnpm run dev:api   # registers with the erxes gateway through Redis
-pnpm run dev:ui    # serves http://localhost:3099/remoteEntry.js
+cp .env.example .env          # MONGO_URL, REDIS_*, GEMMA_* тохируулна
+pnpm run dev:api              # API, erxes gateway-д бүртгүүлнэ
+pnpm run dev:ui               # http://localhost:3099/remoteEntry.js
 ```
 
-`check`, `build` and `dev:ui` run `codegen` first, so the generated GraphQL
-types always match the printed API schema.
-
-In the erxes checkout `.env`, add the plugin and restart the gateway and
-core-api so they pick it up:
+erxes-ийн `.env`-д plugin-ийг нэмээд gateway, core-api-г дахин эхлүүлнэ:
 
 ```sh
 ENABLED_PLUGINS=...,classradar
 ```
 
-Then open `http://localhost:3001/classradar` (settings: `/classradar/settings`).
-Both processes must use the same Redis as erxes; `UI_ENTRY_URL` must be
-reachable by the browser, not merely by the API container. Requests reach the
-API through the gateway (`/graphql`), which forwards the signed-in user and
-tenant. Those headers are not independently authenticated: keep the API on
-a private gateway-only network and strip user/tenant headers at public ingress.
+Тэгээд `http://localhost:3001/classradar` нээнэ.
 
-## Scripts
+**Gemma 4** (`.env`): [aistudio.google.com/apikey](https://aistudio.google.com/apikey)-ээс
+үнэгүй key авна. Ollama зэрэг OpenAI-compatible ямар ч endpoint ажиллана.
 
-| Script             | What it does                                    |
-| ------------------ | ----------------------------------------------- |
-| `pnpm run dev:api` | API in watch mode                               |
-| `pnpm run dev:ui`  | UI remote dev server                            |
-| `pnpm run codegen` | Print the API schema, generate UI GraphQL types |
-| `pnpm run build`   | Production build of every part                  |
-| `pnpm run check`   | Type-check every part                           |
-| `pnpm run lint`    | oxlint                                          |
-| `pnpm run fmt`     | oxfmt                                           |
+```sh
+GEMMA_URL=https://generativelanguage.googleapis.com/v1beta/openai
+GEMMA_MODEL=gemma-4-26b-a4b-it
+GEMMA_API_KEY=...
+GEMMA_TIMEOUT_MS=60000
+```
 
-## Deploy
+**VS Code extension:**
 
-- **API**: `docker build --build-arg UI_ENTRY_URL=<remoteEntry.js URL> -t <image> .`
-  Run `pnpm install` first and commit its lockfile before building the image.
-  The image serves the API on port 80 and registers itself on start
-  (`plugin-classradar-api:80` unless `LOAD_BALANCER_ADDRESS` is set).
-- **UI**: upload `ui/dist` to a static host or CDN. Upload hashed assets
-  first and `remoteEntry.js` last with `Cache-Control: no-store`. Without
-  `UI_ENTRY_URL`, erxes falls back to `https://plugins.erxes.io/<release>/classradar_ui/remoteEntry.js`;
-  this generator does not upload there. Set your own browser-reachable URL,
-  serve all emitted chunks with CORS for the erxes origin, and use immutable
-  caching only for content-hashed assets (not stable-named expose chunks).
+```sh
+pnpm --filter classradar_vscode build
+code --extensionDevelopmentPath=./extension <сурагчийн хавтас>
+```
 
-See [docs/erxes-integration.md](docs/erxes-integration.md) for how the plugin
-plugs into erxes and [AGENTS.md](AGENTS.md) for the rules to keep it working.
+Тохиргоо: `classradar.gatewayUrl`, `classradar.studentEmail`,
+`classradar.classCode`, `classradar.seat` (эсвэл статус бар дээр дарж сонгоно).
+
+**Demo өгөгдөл:** `pnpm run seed:demo --reset` нь 24 суудалтай 10A ангийг
+жинхэнэ mutation-уудаар үүсгэнэ.
+
+## Ажиллаж буй ба төлөвлөсөн боломж
+
+**Ажиллаж байна**
+
+- Extension → gateway → MongoDB алдааны урсгал, давхардалгүй, офлайн үед дахин оролдоно
+- Алдааг `normalizedKey`-ээр бүлэглэх (мөрийн дугаар, нэрсийг хасна, AI-гүй)
+- Монгол тайлбар + 3 өнцгийн зөвлөгөө, "Ойлголоо", hover-ийн skeleton
+- Gemma 4 (cache-тэй, хариуг задруулахаас хамгаалсан) + Gemma удаан/унтарсан
+  үед түгээмэл 12 алдааны бэлэн монгол тайлбар
+- erxes доторх багшийн самбар: суудлын зураг, анхаарах жагсаалт, топ 3 алдаа, loading радар
+
+**Хязгаарлалт (шударгаар)**
+
+- Сурагч erxes-д нэвтэрдэггүй: сурагчийн имэйл/анги/суудал extension-ий
+  тохиргооноос ирдэг, сурагчийн mutation-ууд одоогоор нэвтрэлтгүй (`TODO(auth)`).
+- Google AI Studio дээрх Gemma 4 нэг хариунд 10–60с зарцуулж, заримдаа алддаг.
+  Тиймээс hover Gemma-г хүлээдэггүй: эхэндээ бэлэн тайлбар, Gemma хариулмагц cache-ээс Gemma-гийнх.
+- Demo-гийн "5+ мин гацсан" суудлуудын хугацааг seed скрипт урагшлуулдаг.
+
+**Төлөвлөсөн**
+
+- Terminal-ийн алдааг stack trace-ээс файл:мөр олж diagnostic болгох
+- Сурагчийн нэвтрэлт (erxes client portal эсвэл ангийн код + токен)
+- Ярилцлагын дасгал, leaderboard (дизайн бэлэн)
+
+## Скриптүүд
+
+| Script | Юу хийдэг |
+| ------ | --------- |
+| `pnpm run dev:api` / `dev:ui` | API / UI хөгжүүлэлтийн горим |
+| `pnpm run seed:demo --reset` | Demo анги үүсгэх |
+| `pnpm run check` | Typecheck + тест (API, UI, extension) |
+| `pnpm run lint` / `fmt` | oxlint / oxfmt |
+| `pnpm run build` | Бүх хэсгийн production build |
+
+Deploy болон erxes-тэй холбогдох дүрмийн дэлгэрэнгүй:
+[docs/erxes-integration.md](docs/erxes-integration.md), [AGENTS.md](AGENTS.md).
+
+## Лиценз
+
+[MIT](LICENSE)
