@@ -37,12 +37,16 @@ const SPACER = `<img src="data:image/svg+xml;base64,${btoa(
   '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="1"/>',
 )}" width="480" height="1" alt="">`;
 
-const SEP = " &nbsp;·&nbsp; ";
+/** A pill: VS Code hovers allow only color and background-color on spans. */
+const pill = (fg: string, bg: string, html: string) =>
+  `<span style="color:${fg};background-color:${bg};">&nbsp;&nbsp;${html}&nbsp;&nbsp;</span>`;
 
 /**
- * One tip at a time: `view` is the 0-based tip shown (defaults to the newest
- * revealed). `at` is the error position, so commands can reopen the hover there.
- * The card is HTML so it can be centered.
+ * The card from the extension design (Extension@1x): status line with the
+ * "erxes радар" badge, title, explanation, the tip in a framed box with its
+ * progress dots, the original error, and the actions bottom right.
+ * `view` is the 0-based tip shown (defaults to the newest revealed); `at` is
+ * the error position, so commands can reopen the hover there.
  */
 export const renderHelp = (help: ErrorHelp, at: Position, view = help.hintsUsed - 1) => {
   const position = [at.line, at.character];
@@ -52,67 +56,76 @@ export const renderHelp = (help: ErrorHelp, at: Position, view = help.hintsUsed 
   const hint = opened[shown];
 
   const parts = [
-    `<div align="center">`,
     SPACER,
-    `<p>${color("#B9A2FF", `🛰️ <b>Алдаа · ${help.line}-р мөр</b>`)}</p>`,
-    `<h2>${rich(help.title)}</h2>`,
+    `<table width="100%"><tr>` +
+      `<td>${color("#FF9A7A", `○ <b>Алдаа · ${help.line}-р мөр</b>`)}</td>` +
+      `<td align="right">${pill("#C9B8FF", "#2A1A56", "erxes радар")}</td>` +
+      `</tr></table>`,
+    `<h3>${rich(help.title)}</h3>`,
     `<p>${rich(help.explanation)}</p>`,
   ];
 
   if (hint !== undefined) {
     const angle = TIP_ANGLES[shown] ?? "";
+    // ◀ ▶ move between tips already opened; no server call.
+    const prev =
+      shown > 0
+        ? commandLink("◀", SHOW_TIP_COMMAND, [help.errorId, shown - 1, ...position])
+        : color("#4A4560", "◀");
+    const next =
+      shown < opened.length - 1
+        ? commandLink("▶", SHOW_TIP_COMMAND, [help.errorId, shown + 1, ...position])
+        : color("#4A4560", "▶");
     parts.push(
-      "<hr>",
-      `<p>${color("#B9A2FF", `💡 <b>Зөвлөгөө ${shown + 1}/${help.hintsTotal}</b> ${dots(help.hintsUsed, help.hintsTotal)} · ${angle}`)}</p>`,
-      `<p><b>${rich(hint)}</b></p>`,
+      `<blockquote>` +
+        `<p>${color("#C9B8FF", `<b>Зөвлөгөө ${shown + 1}/${help.hintsTotal}</b>`)} ` +
+        `${color("#9B84EE", dots(help.hintsUsed, help.hintsTotal))} &nbsp;${prev}&nbsp;${next}` +
+        ` &nbsp;${color("#8C86A6", angle)}</p>` +
+        `<p>${rich(hint)}</p>` +
+        `</blockquote>`,
     );
   }
 
-  // Always-visible "◀ Өмнөх · n/3 · Дараах ▶" row; arrows are words too so
-  // they are easy to click, and a hollow arrow means "nowhere to go".
-  const prev =
-    shown > 0
-      ? commandLink("◀ Өмнөх", SHOW_TIP_COMMAND, [help.errorId, shown - 1, ...position])
-      : color("#6E6888", "◁ Өмнөх");
-  const next =
-    shown < opened.length - 1
-      ? commandLink("Дараах ▶", SHOW_TIP_COMMAND, [help.errorId, shown + 1, ...position])
-      : help.hintsUsed < help.hintsTotal
-        ? commandLink("Дараах ▶", REVEAL_COMMAND, [help.errorId, ...position])
-        : color("#6E6888", "Дараах ▷");
-  const actions = [prev, `<b>${Math.max(shown + 1, 1)}/${help.hintsTotal}</b>`, next];
-  if (!help.understood) {
-    actions.push(commandLink("<b>✓ Ойлголоо</b>", UNDERSTOOD_COMMAND, [help.errorId, ...position]));
-  }
-  parts.push(`<p>${actions.join(SEP)}</p>`);
+  parts.push(`<p>${color("#8C86A6", `Эх алдаа: <code>${escapeHtml(help.message)}</code>`)}</p>`);
 
+  const actions: string[] = [];
+  if (help.hintsUsed < help.hintsTotal) {
+    const label = help.hintsUsed === 0 ? "Зөвлөгөө авах" : "Өөр зөвлөгөө";
+    actions.push(
+      commandLink(pill("#E3DEF2", "#2A1A56", label), REVEAL_COMMAND, [help.errorId, ...position]),
+    );
+  }
   if (help.understood) {
-    parts.push(
-      `<p>${color("#3FE0B0", "✅ <b>Ойлгосон!</b> Одоо өөрөө засаад, файлаа хадгалаарай.")}</p>`,
+    actions.push(pill("#0B2A22", "#3FE0B0", "✓ Ойлгосон"));
+  } else {
+    actions.push(
+      commandLink(pill("#FFFFFF", "#7C4DFF", "<b>Ойлголоо</b>"), UNDERSTOOD_COMMAND, [
+        help.errorId,
+        ...position,
+      ]),
     );
-  } else if (help.hintsUsed >= help.hintsTotal) {
-    parts.push(`<p><i>Бүх зөвлөгөөг харлаа. Гацвал багшаасаа асуугаарай.</i></p>`);
+  }
+  parts.push(`<p align="right">${actions.join("&nbsp;&nbsp;")}</p>`);
+
+  if (!help.understood && help.hintsUsed >= help.hintsTotal) {
+    parts.push(
+      `<p>${color("#A9A3BF", "<i>Бүх зөвлөгөөг харлаа. Гацвал багшаасаа асуугаарай.</i>")}</p>`,
+    );
   }
 
   const source = help.source === "gemma" ? `Gemma 4 (${help.model ?? "gemma"})` : "бэлэн тайлбар";
-  parts.push(
-    `<p>${color("#8C86A6", `<sub>Эх алдаа: ${escapeHtml(help.message)}</sub>`)}</p>`,
-    `<p>${color("#8C86A6", `<sub>Ангийн радар · ${source}</sub>`)}</p>`,
-    "</div>",
-  );
+  parts.push(`<p>${color("#6E6888", `<sub>Тайлбар: ${source}</sub>`)}</p>`);
   return parts.join("\n");
 };
 
 // Placeholder bars in the card's shape while the explanation is on its way.
 export const SKELETON = [
-  `<div align="center">`,
   SPACER,
-  `<p>${color("#B9A2FF", "🛰️ <b>Ангийн радар</b>")}</p>`,
+  `<table width="100%"><tr><td>${color("#6E6888", "○ ░░░░░░░░░")}</td><td align="right">${pill("#C9B8FF", "#2A1A56", "erxes радар")}</td></tr></table>`,
   `<h2>${color("#6E6888", "░░░░░░░░░░░░")}</h2>`,
   `<p>${color("#6E6888", "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░<br>░░░░░░░░░░░░░░░░░░")}</p>`,
   `<p>${color("#6E6888", "💡 ░░░░░░░░ ○○○")}</p>`,
   `<p>${color("#8C86A6", "<sub>⏳ Тайлбар бэлдэж байна…</sub>")}</p>`,
-  "</div>",
 ].join("\n");
 
 export const OFFLINE =
