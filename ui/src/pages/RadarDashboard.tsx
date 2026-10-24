@@ -289,7 +289,13 @@ const SeatMap = ({ seats }: { seats: Seat[] }) => {
   return (
     <section
       aria-label="Ангийн суудлын зураг"
-      style={{ perspective: 1500, perspectiveOrigin: "50% 0%", paddingTop: 170 }}
+      style={{
+        perspective: 1500,
+        perspectiveOrigin: "50% 0%",
+        paddingTop: 170,
+        maxWidth: 860,
+        margin: "0 auto",
+      }}
     >
       <div
         style={{
@@ -377,6 +383,15 @@ const SummaryRow = ({ status, label, count }: { status: Status; label: string; c
   );
 };
 
+/** Centered page column shared by the header row and the main area. */
+const column: CSSProperties = {
+  width: "100%",
+  maxWidth: 1240,
+  boxSizing: "border-box",
+  paddingLeft: "clamp(16px, 3vw, 32px)",
+  paddingRight: "clamp(16px, 3vw, 32px)",
+};
+
 const panelHeading: CSSProperties = {
   margin: 0,
   fontSize: 13,
@@ -420,15 +435,18 @@ export const RadarDashboard = () => {
       style={{
         minHeight: "100%",
         boxSizing: "border-box",
-        background: "radial-gradient(1100px 600px at 40% 10%, #1E1040 0%, #0B0716 62%)",
+        background: "radial-gradient(1100px 600px at 50% 10%, #1E1040 0%, #0B0716 62%)",
         color: "#F1EEFA",
         display: "flex",
         flexDirection: "column",
+        // Content is centered and capped, so it sits right whether the erxes
+        // sidebar is open or closed.
+        alignItems: "center",
       }}
     >
       <div
         className="classradar:flex classradar:flex-wrap classradar:items-center classradar:justify-between classradar:gap-4"
-        style={{ padding: "28px 32px 0" }}
+        style={{ ...column, paddingTop: 28 }}
       >
         <div className="classradar:flex classradar:flex-wrap classradar:items-center classradar:gap-4">
           <form
@@ -513,10 +531,10 @@ export const RadarDashboard = () => {
       </div>
 
       <main
-        className="classradar:flex classradar:flex-wrap classradar:items-start classradar:gap-8"
-        style={{ padding: "0 32px 40px" }}
+        className="classradar:flex classradar:flex-wrap classradar:items-start classradar:justify-center classradar:gap-8"
+        style={{ ...column, paddingBottom: 40 }}
       >
-        <div style={{ flex: "999 1 640px", minWidth: 0 }}>
+        <div style={{ flex: "999 1 560px", minWidth: 0, maxWidth: 860 }}>
           {loading && !data ? (
             <div style={{ paddingTop: 170 }}>
               <div
