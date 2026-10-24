@@ -11,6 +11,8 @@ const errorSchema = new Schema(
     seat: { type: String, default: null },
     file: { type: String, required: true },
     line: { type: Number, required: true },
+    // 0-based column of the error in that line, when the editor knows it.
+    column: { type: Number, default: null },
     message: { type: String, required: true },
     normalizedKey: { type: String, required: true },
     // At most the error line and one line either side, never the whole file.

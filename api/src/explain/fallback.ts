@@ -18,10 +18,10 @@ const catalog: Entry[] = [
     match: /nameerror|cannot find name|is not defined/i,
     title: "Нэр танигдсангүй",
     explanation:
-      "Компьютер энэ нэртэй хувьсагч эсвэл функцийг танихгүй байна. Чи үүнийг өмнө нь үүсгээгүй, эсвэл нэрийг нь өөрөөр бичсэн байж магадгүй.",
+      "Компьютер {name} гэсэн нэрийг танихгүй байна. Чи үүнийг өмнө нь үүсгээгүй, эсвэл нэрийг нь өөрөөр бичсэн байж магадгүй.",
     hints: [
-      "Алдаатай мөрөнд байгаа нэрийг хараад, яг ийм нэртэй хувьсагчийг кодын дээд хэсгээс хай.",
-      "Алдааны мессежид хашилтан доторх нэрийг өөрийн үүсгэсэн нэртэйгээ үсэг үсгээр нь тулгаж үз.",
+      "{name} гэсэн нэрийг кодынхоо дээд хэсгээс хай: яг ийм бичигдсэн нэр байна уу?",
+      "Утга оноосон мөрөнд бичсэн нэрээ {name}-тэй үсэг үсгээр нь тулгаж үз.",
       "Компьютер нэрийг үсэг бүрээр нь, том жижиг үсгийг ч ялгаж таньдаг. Мөн хувьсагчийг ашиглахаасаа өмнө үүсгэсэн байх ёстой.",
     ],
   },
@@ -61,12 +61,14 @@ const catalog: Entry[] = [
     ],
   },
   {
-    match: /';' expected|missing semicolon|expected ';'/i,
+    match: /'[^'\s]{1,3}' expected|missing semicolon|expected '[^'\s]{1,3}'/i,
     title: "Тэмдэг дутуу байна",
-    explanation: "Компьютер энд мөрийг дуусгах тэмдэг эсвэл өөр тэмдэг хүлээж байсан ч олсонгүй.",
+    // The compiler often guesses the wrong missing mark (a dropped `.` is
+    // reported as "';' expected"), so point at the gap, not its guess.
+    explanation: "Компьютер {gap} ямар нэг тэмдэг хүлээж байсан ч олсонгүй.",
     hints: [
-      "Алдаа заасан мөрийн өмнөх мөрийн төгсгөлийг хар.",
-      "Тэр хэсгийг хэдэн мөр болгож хуваагаад, алдааны улаан зураас аль мөр рүү шилжихийг ажигла.",
+      "{gap} байгаа зайг хар: тэнд юу дутуу байна вэ?",
+      "Ижил төрлийн зөв ажилладаг өөр мөртэйгөө харьцуулаад, тэр хоёрын хооронд ямар тэмдэг байдгийг хар.",
       "Компьютер кодыг дүрмийн дагуу уншдаг. Нэг тэмдэг дутуу бол дараагийн мөрийг ч буруу ойлгож болно.",
     ],
   },
@@ -94,9 +96,9 @@ const catalog: Entry[] = [
   {
     match: /modulenotfounderror|no module named|cannot find module|importerror/i,
     title: "Модуль олдсонгүй",
-    explanation: "Импортлох гэж буй модуль эсвэл файл олдсонгүй.",
+    explanation: "Импортлох гэж буй {name} модуль эсвэл файл олдсонгүй.",
     hints: [
-      "`import` мөр дээрх модулийн нэрийг хар.",
+      "`import` мөр дээрх {name} гэсэн нэрийг хар: зөв бичсэн үү?",
       "Өөрийн файл бол нэр, байршлыг нь шалга. Сан бол терминал дээр суусан эсэхийг шалга.",
       "Модуль гэдэг нь тусдаа файл эсвэл сан. Компьютер түүнийг зөвхөн тодорхой газруудаас хайдаг.",
     ],
@@ -105,11 +107,33 @@ const catalog: Entry[] = [
     match:
       /attributeerror|has no attribute|property .* does not exist|is not a function|cannot read propert/i,
     title: "Ийм функц, шинж чанар алга",
-    explanation: "Энэ утгад чиний дуудаж буй шинж чанар эсвэл функц байхгүй байна.",
+    explanation: "Энэ утгад чиний дуудаж буй {name} гэсэн шинж чанар эсвэл функц байхгүй байна.",
     hints: [
-      "Цэгийн (`.`) өмнөх утга болон араас нь бичсэн нэрийг хар.",
+      "Цэгийн (`.`) араас бичсэн {name}-ийг болон цэгийн өмнөх утгыг хар.",
       "Цэгийн өмнөх утгын төрлийг хэвлээд, тэр төрөлд ямар функц байдгийг баримт бичгээс шалга.",
       "Төрөл бүр өөрийн гэсэн функцтэй: жагсаалт, текст, объект тус бүр өөр нэртэй функцтэй байдаг.",
+    ],
+  },
+  {
+    match:
+      /expected \d+ arguments?|takes \d+ positional|missing \d+ required positional|too (many|few) arguments/i,
+    title: "Аргументын тоо таарахгүй",
+    explanation: "Функцийг дуудахдаа түүнд хэрэгтэй тооноос өөр тооны утга өгсөн байна.",
+    hints: [
+      "Функцийг дуудсан мөрөнд хаалтан доторх утгуудыг тоол.",
+      "Тэр функцийг тодорхойлсон мөрийг олоод хэдэн параметр хүлээж байгааг харьцуул.",
+      "Функц бүр тодорхой тооны оролт хүлээдэг: тодорхойлолт болон дуудлага хоёр таарах ёстой.",
+    ],
+  },
+  {
+    match: /implicitly has an '\w+' type|type annotation/i,
+    title: "Төрөл заагаагүй байна",
+    explanation:
+      "TypeScript {name}-ийн төрлийг өөрөө тааж чадсангүй, тиймээс төрлийг нь заахыг хүсэж байна.",
+    hints: [
+      "{name}-ийг анх үүсгэсэн мөрийг хар.",
+      "Тэр утга ямар төрөл (тоо, текст, жагсаалт…) байх ёстойг өөрөөсөө асуу.",
+      "TypeScript утга бүр ямар төрөлтэйг мэдэхийг хүсдэг: үүсгэхдээ утга оноох, эсвэл төрлийг нь заах хэрэгтэй.",
     ],
   },
   {
@@ -119,7 +143,7 @@ const catalog: Entry[] = [
     explanation:
       "Кодын бичлэгийн дүрэм зөрчигдсөн байна. Компьютер энэ мөрийг уншиж ойлгож чадсангүй.",
     hints: [
-      "Алдаатай мөр болон түүний яг өмнөх мөрийг хар.",
+      "{gap} байгаа хэсгийг болон түүний өмнөх мөрийг хар.",
       "Мөрийг хэсэг хэсгээр нь уншиж, `:`, хаалт, таслал, хашилт бүрийг тоолж үз.",
       "Програмчлалын хэл бүр хатуу дүрэмтэй. Нэг жижиг тэмдэг дутахад компьютер бүх мөрийг ойлгохгүй болдог.",
     ],
@@ -139,3 +163,53 @@ const generic: Explanation = {
 
 export const fallbackExplanation = (message: string): Explanation =>
   catalog.find((entry) => entry.match.test(message)) ?? generic;
+
+/** The first quoted name in an error message: 'totl' in "name 'totl' is not defined". */
+export const quotedName = (message: string) =>
+  // "no attribute 'push'" names the attribute last; otherwise the first quote.
+  (/(?:attribute|property) ['"`]([^'"`\n]{1,40})['"`]/i.exec(message) ??
+    /['"`‘“]([^'"`’”\n]{1,40})['"`’”]/.exec(message))?.[1] ?? null;
+
+/**
+ * The tokens either side of the error column in the error line, so tips can
+ * say exactly where to look. `snippet` holds the line and at most one line
+ * either side; it starts one line before the error unless that is line 1.
+ */
+export const tokensAround = (
+  snippet: string | null | undefined,
+  line: number,
+  column: number | null | undefined,
+) => {
+  const text = snippet?.split("\n")[line === 1 ? 0 : 1];
+  if (text === undefined || column === null || column === undefined) return undefined;
+  const token = /[\p{L}\p{N}_$]+|[^\s\p{L}\p{N}_$]/gu;
+  const beforeTokens = text.slice(0, column).match(token);
+  const after = text.slice(column).match(token)?.[0] ?? null;
+  return { before: beforeTokens?.at(-1) ?? null, after };
+};
+
+/**
+ * Fills `{name}` with the name from this student's message, so a shared
+ * explanation still points at their exact mistake. It quotes what they wrote,
+ * never a suggested fix (a "Did you mean" name comes second and is skipped).
+ */
+export const personalize = <T extends Explanation>(
+  help: T,
+  message: string,
+  around?: { before: string | null; after: string | null },
+): T => {
+  const name = quotedName(message);
+  const { before, after } = around ?? { before: null, after: null };
+  const gap =
+    before && after
+      ? `\`${before}\` ба \`${after}\` хоёрын хооронд`
+      : after
+        ? `\`${after}\`-ийн өмнө`
+        : before
+          ? `\`${before}\`-ийн дараа`
+          : "алдаа заасан газарт";
+  const fill = (text: string) =>
+    text.replaceAll("{name}", name ? `\`${name}\`` : "энэ нэр").replaceAll("{gap}", gap);
+  const [a, b, c] = help.hints;
+  return { ...help, explanation: fill(help.explanation), hints: [fill(a), fill(b), fill(c)] };
+};

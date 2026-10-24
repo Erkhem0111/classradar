@@ -75,3 +75,23 @@ test("askGemma talks OpenAI-compatible chat and falls back on timeout", async ()
     server.close();
   }
 });
+
+test("tips name the student's exact name or gap, never the compiler's guess", async () => {
+  const { personalize, tokensAround } = await import("./fallback.ts");
+  const missingDot = "';' expected.";
+  const gap = personalize(
+    fallbackExplanation(missingDot),
+    missingDot,
+    tokensAround("const total = 0;\nconsole log(total);\n", 2, 8),
+  );
+  assert.match(gap.hints[0], /`console` ба `log` хоёрын хооронд/);
+  assert.ok(![gap.explanation, ...gap.hints].some((text) => text.includes("`;`")));
+
+  const typo = "Cannot find name 'totl'. Did you mean 'total'?";
+  const named = personalize(fallbackExplanation(typo), typo);
+  assert.match(named.explanation, /`totl`/);
+  assert.ok(![named.explanation, ...named.hints].some((text) => text.includes("total")));
+
+  const attr = "AttributeError: 'list' object has no attribute 'push'";
+  assert.match(personalize(fallbackExplanation(attr), attr).explanation, /`push`/);
+});

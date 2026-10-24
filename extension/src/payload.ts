@@ -12,6 +12,8 @@ export type ErrorReport = StudentIdentity & {
   file: string;
   /** 1-based, as shown in the editor. */
   line: number;
+  /** 0-based column, so tips can name the exact gap. */
+  column: number | null;
   message: string;
   snippet: string | null;
   source: ErrorSource;
@@ -22,6 +24,8 @@ export type CapturedError = {
   file: string;
   /** 0-based, as VS Code reports it. */
   line: number;
+  /** 0-based. */
+  character?: number;
   message: string;
 };
 
@@ -48,6 +52,7 @@ export const buildReport = (
   ...identity,
   file: error.file,
   line: error.line + 1,
+  column: error.character ?? null,
   // Some language servers append multi-line detail; the first line is the error.
   message: (error.message.split(/\r?\n/)[0] ?? error.message).trim().slice(0, 2000),
   snippet: buildSnippet(lines, error.line),

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { isValidObjectId } from "mongoose";
 import { manifest } from "../config.ts";
 import type { Context } from "../context.ts";
+import { personalize, tokensAround } from "../explain/fallback.ts";
 import { explainError } from "../explain/index.ts";
 import { ClassradarStudents } from "../models/students.ts";
 import {
@@ -62,6 +63,8 @@ export const typeDefs = gql`
     seat: String
     file: String!
     line: Int!
+    "0-based column of the error in its line."
+    column: Int
     message: String!
     "The error line and at most one line either side; longer input is cut to 3 lines."
     snippet: String
@@ -145,6 +148,7 @@ const errorInputSchema = z.object({
   seat: z.string().trim().max(20).nullish(),
   file: z.string().trim().min(1).max(500),
   line: z.number().int().min(0).max(1_000_000),
+  column: z.number().int().min(0).max(10_000).nullish(),
   message: z.string().trim().min(1).max(2000),
   snippet: z.string().max(1500).nullish(),
   source: z.enum(ERROR_SOURCES),
@@ -196,6 +200,8 @@ const toHelp = async (
     _id: unknown;
     message: string;
     line: number;
+    column?: number | null;
+    snippet?: string | null;
     normalizedKey: string;
     hintsUsed: number;
     understoodAt?: Date | null;
@@ -203,7 +209,11 @@ const toHelp = async (
   subdomain: string,
 ) => {
   if (!error) throw new GraphQLError("Error not found", { extensions: { code: "NOT_FOUND" } });
-  const help = await explainError(subdomain, error.normalizedKey, error.message);
+  const help = personalize(
+    await explainError(subdomain, error.normalizedKey, error.message),
+    error.message,
+    tokensAround(error.snippet, error.line, error.column),
+  );
   const hintsUsed = Math.min(error.hintsUsed, HINTS_TOTAL);
   return {
     errorId: String(error._id),

@@ -102,9 +102,7 @@ export const activate = (context: vscode.ExtensionContext) => {
     void sendHeartbeat(gatewayUrl, identity, Boolean(primary)).then((result) => {
       if (!result.ok) log.appendLine(`✗ heartbeat: ${result.error}`);
     });
-    const reports = primary
-      ? [buildReport(identity, { file, line: primary.line, message: primary.message }, lines)]
-      : [];
+    const reports = primary ? [buildReport(identity, { file, ...primary }, lines)] : [];
 
     let offline = false;
     sending.add(uri.toString());
