@@ -6,6 +6,7 @@ import { isValidObjectId } from "mongoose";
 import { manifest } from "../config.ts";
 import type { Context } from "../context.ts";
 import { explainError } from "../explain/index.ts";
+import { ClassradarStudents } from "../models/students.ts";
 import {
   ClassradarErrors,
   ERROR_SOURCES,
@@ -49,6 +50,8 @@ export const typeDefs = gql`
 
   type ClassradarTopError {
     normalizedKey: String!
+    "A few words naming the problem."
+    title: String!
     count: Int!
     sampleMessage: String!
   }
@@ -88,11 +91,36 @@ export const typeDefs = gql`
     model: String
   }
 
+  enum ClassradarSeatStatus {
+    working
+    error
+    stuck
+    absent
+  }
+
+  type ClassradarSeat {
+    seat: String
+    studentEmail: String!
+    name: String
+    status: ClassradarSeatStatus!
+    "Minutes since the current error appeared (stuck after 5)."
+    errorMinutes: Int
+    "Today's latest error, when the student has one now."
+    errorTitle: String
+    errorMessage: String
+    errorFile: String
+    errorLine: Int
+    hintsUsed: Int!
+    understood: Boolean!
+  }
+
   type Query {
     classradarStatus: ClassradarStatus!
     classradarErrorHelp(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
     "Today's (Ulaanbaatar time) three most repeated errors in a class."
     classradarTopErrors(classCode: String!): [ClassradarTopError!]!
+    "Live seat map of a class (teacher view)."
+    classradarSeats(classCode: String!): [ClassradarSeat!]!
   }
 
   type Mutation {
@@ -101,6 +129,13 @@ export const typeDefs = gql`
     classradarRevealHint(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
     "Records that the student understood the error (first press wins)."
     classradarMarkUnderstood(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
+    "Sent by the extension after each settled save: present, and with or without an error."
+    classradarHeartbeat(
+      studentEmail: String!
+      classCode: String!
+      seat: String
+      hasError: Boolean!
+    ): Boolean!
   }
 `;
 
@@ -131,6 +166,19 @@ const requireUser = ({ user }: Context) => {
 };
 
 const HINTS_TOTAL = 3;
+const STUCK_MINUTES = 5;
+
+const heartbeatSchema = z.object({
+  studentEmail: z.string().trim().toLowerCase().email().max(200),
+  classCode: z.string().trim().min(1).max(50),
+  seat: z.string().trim().max(20).nullish(),
+  hasError: z.boolean(),
+});
+
+const seatOrder = (seat: string | null | undefined) => {
+  const number = Number(seat?.replace(/\D/g, ""));
+  return Number.isFinite(number) && seat ? number : Number.MAX_SAFE_INTEGER;
+};
 
 type HelpArgs = { errorId: string; studentEmail: string };
 
@@ -185,6 +233,74 @@ export const resolvers: GraphQLResolverMap<Context> = {
     classradarErrorHelp: async (_parent, args: HelpArgs, { subdomain }) =>
       toHelp(await ClassradarErrors.findOne(ownedErrorFilter(args, subdomain)).lean(), subdomain),
 
+    classradarSeats: async (_parent, args: { classCode: string }, context) => {
+      requireUser(context);
+      const { subdomain } = context;
+      const classCode = args.classCode.trim();
+      const today = startOfTodayUlaanbaatar();
+      const now = Date.now();
+      const students = await ClassradarStudents.find({ subdomain, classCode }).limit(200).lean();
+      const latest = await ClassradarErrors.aggregate<{
+        _id: string;
+        message: string;
+        normalizedKey: string;
+        file: string;
+        line: number;
+        hintsUsed: number;
+        understoodAt: Date | null;
+      }>([
+        { $match: { subdomain, classCode, createdAt: { $gte: today } } },
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: "$studentEmail",
+            message: { $first: "$message" },
+            normalizedKey: { $first: "$normalizedKey" },
+            file: { $first: "$file" },
+            line: { $first: "$line" },
+            hintsUsed: { $first: "$hintsUsed" },
+            understoodAt: { $first: "$understoodAt" },
+          },
+        },
+      ]);
+      const latestByEmail = new Map(latest.map((error) => [error._id, error]));
+
+      const seats = await Promise.all(
+        students.map(async (student) => {
+          const present = Boolean(student.lastSeenAt && student.lastSeenAt >= today);
+          const errorMinutes =
+            present && student.errorSince
+              ? Math.floor((now - student.errorSince.getTime()) / 60000)
+              : null;
+          const status = !present
+            ? "absent"
+            : errorMinutes === null
+              ? "working"
+              : errorMinutes >= STUCK_MINUTES
+                ? "stuck"
+                : "error";
+          const error = errorMinutes === null ? undefined : latestByEmail.get(student.email);
+          const title = error
+            ? (await explainError(subdomain, error.normalizedKey, error.message)).title
+            : null;
+          return {
+            seat: student.seat,
+            studentEmail: student.email,
+            name: student.name,
+            status,
+            errorMinutes,
+            errorTitle: title,
+            errorMessage: error?.message ?? null,
+            errorFile: error?.file ?? null,
+            errorLine: error?.line ?? null,
+            hintsUsed: Math.min(error?.hintsUsed ?? 0, HINTS_TOTAL),
+            understood: Boolean(error?.understoodAt),
+          };
+        }),
+      );
+      return seats.sort((a, b) => seatOrder(a.seat) - seatOrder(b.seat));
+    },
+
     // Teacher view: requires a signed-in erxes user.
     classradarTopErrors: async (_parent, args: { classCode: string }, context) => {
       requireUser(context);
@@ -211,7 +327,15 @@ export const resolvers: GraphQLResolverMap<Context> = {
         { $sort: { count: -1, _id: 1 } },
         { $limit: 3 },
         { $project: { _id: 0, normalizedKey: "$_id", count: 1, sampleMessage: 1 } },
-      ]);
+      ]).then((rows) =>
+        Promise.all(
+          rows.map(async (row) => ({
+            ...row,
+            title: (await explainError(context.subdomain, row.normalizedKey, row.sampleMessage))
+              .title,
+          })),
+        ),
+      );
     },
   },
 
@@ -246,6 +370,25 @@ export const resolvers: GraphQLResolverMap<Context> = {
         { new: true },
       ).lean();
       return toHelp(updated ?? (await ClassradarErrors.findOne(filter).lean()), subdomain);
+    },
+
+    // TODO(auth): anonymous like classradarReportError until student auth exists.
+    classradarHeartbeat: async (_parent, args: unknown, { subdomain }) => {
+      const parsed = heartbeatSchema.safeParse(args);
+      if (!parsed.success) throw badInput(parsed.error);
+      const { studentEmail, classCode, seat, hasError } = parsed.data;
+      const now = new Date();
+      const filter = { subdomain, classCode, email: studentEmail };
+      await ClassradarStudents.updateOne(
+        filter,
+        { $set: { lastSeenAt: now, ...(seat ? { seat } : {}) } },
+        { upsert: true },
+      );
+      // errorSince keeps the first moment of an unbroken run of errors.
+      await ClassradarStudents.updateOne(hasError ? { ...filter, errorSince: null } : filter, {
+        $set: { errorSince: hasError ? now : null },
+      });
+      return true;
     },
 
     classradarMarkUnderstood: async (_parent, args: HelpArgs, { subdomain }) => {

@@ -1,5 +1,12 @@
 import * as vscode from "vscode";
-import { type ErrorHelp, fetchHelp, markUnderstood, revealHint, sendReport } from "./client";
+import {
+  type ErrorHelp,
+  fetchHelp,
+  markUnderstood,
+  revealHint,
+  sendHeartbeat,
+  sendReport,
+} from "./client";
 import {
   HOVER_COMMANDS,
   OFFLINE,
@@ -92,6 +99,9 @@ export const activate = (context: vscode.ExtensionContext) => {
     const lines = Array.from({ length: document.lineCount }, (_, i) => document.lineAt(i).text);
 
     const primary = primaryError(uri);
+    void sendHeartbeat(gatewayUrl, identity, Boolean(primary)).then((result) => {
+      if (!result.ok) log.appendLine(`✗ heartbeat: ${result.error}`);
+    });
     const reports = primary
       ? [buildReport(identity, { file, line: primary.line, message: primary.message }, lines)]
       : [];
@@ -333,7 +343,7 @@ export const activate = (context: vscode.ExtensionContext) => {
       if (classCode === undefined) return;
       const seat = await vscode.window.showInputBox({
         title: "Class Radar (3/3)",
-        prompt: "Суудлын дугаар (жишээ нь A1)",
+        prompt: "Суудлын дугаар (жишээ нь С12)",
         value: identity.seat,
       });
       if (seat === undefined) return;

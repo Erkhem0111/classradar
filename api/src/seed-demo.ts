@@ -1,8 +1,11 @@
-// Demo data: mock students of one class report realistic errors through the
-// real gateway mutation, so normalizing and grouping run exactly as in class.
+// Demo data for one class: a 24-seat roster whose errors, heartbeats and tips
+// go through the real gateway mutations, so normalizing, grouping and seat
+// status run exactly as in class. Only "stuck" seats are mocked by moving
+// their error start back in time.
 // Usage: pnpm --filter classradar_api seed:demo [--reset] [--class 10A]
 import { connectMongo, disconnectMongo } from "./db.ts";
 import { ClassradarErrors } from "./models/errors.ts";
+import { ClassradarStudents } from "./models/students.ts";
 
 const argValue = (flag: string) => {
   const index = process.argv.indexOf(flag);
@@ -11,23 +14,8 @@ const argValue = (flag: string) => {
 
 const classCode = argValue("--class") ?? "10A";
 const gatewayUrl = argValue("--gateway") ?? "http://localhost:4000/graphql";
-
-const students = [
-  ["bat", "A1"],
-  ["saraa", "A2"],
-  ["temuujin", "A3"],
-  ["nomin", "A4"],
-  ["khulan", "A5"],
-  ["erdene", "B1"],
-  ["anu", "B2"],
-  ["tuguldur", "B3"],
-  ["maral", "B4"],
-  ["bilguun", "B5"],
-  ["zaya", "C1"],
-  ["munkh", "C2"],
-  ["oyu", "C3"],
-  ["ganbold", "C4"],
-] as const;
+// The gateway derives the tenant from the host; seed rows must match it.
+const subdomain = "localhost";
 
 type MockError = { file: string; line: number; message: string; snippet: string };
 
@@ -38,11 +26,11 @@ const nameError = (name: string, line: number): MockError => ({
   message: `NameError: name '${name}' is not defined`,
   snippet: `total = 0\nprint(${name})\n`,
 });
-const indentError = (line: number): MockError => ({
+const unclosed = (line: number): MockError => ({
   file: "main.py",
   line,
-  message: `IndentationError: expected an indented block after 'for' statement on line ${line - 1}`,
-  snippet: `for i in range(5):\nprint(i)\n`,
+  message: "SyntaxError: '(' was never closed",
+  snippet: `name = input("Нэр: "\nprint(name)\n`,
 });
 const typeError = (line: number): MockError => ({
   file: "main.py",
@@ -50,70 +38,150 @@ const typeError = (line: number): MockError => ({
   message: `TypeError: can only concatenate str (not "int") to str`,
   snippet: `age = 15\nprint("Нас: " + age)\n`,
 });
-const syntaxError = (line: number): MockError => ({
+const indentError = (line: number): MockError => ({
   file: "main.py",
   line,
-  message: "SyntaxError: '(' was never closed",
-  snippet: `name = input("Нэр: "\nprint(name)\n`,
-});
-const tsError = (name: string, line: number): MockError => ({
-  file: "src/index.ts",
-  line,
-  message: `Cannot find name '${name}'.`,
-  snippet: `const items = [1, 2, 3];\nconsole.log(${name}.length);\n`,
+  message: `IndentationError: expected an indented block after 'for' statement on line ${line - 1}`,
+  snippet: `for i in range(5):\nprint(i)\n`,
 });
 
-// Seats left out (C5…) stay "absent" on the board.
-const plan: Record<string, MockError[]> = {
-  bat: [nameError("totl", 4), indentError(7)],
-  saraa: [nameError("cnt", 12)],
-  temuujin: [nameError("summ", 3), typeError(9)],
-  nomin: [indentError(5)],
-  khulan: [nameError("reslt", 8)],
-  erdene: [typeError(6), nameError("lenght", 10)],
-  anu: [],
-  tuguldur: [indentError(3), syntaxError(1)],
-  maral: [nameError("Total", 2)],
-  bilguun: [tsError("itmes", 2)],
-  zaya: [],
-  munkh: [typeError(4)],
-  oyu: [syntaxError(2)],
-  ganbold: [nameError("prnt", 1)],
+type Plan =
+  | { kind: "working" }
+  | { kind: "absent" }
+  | { kind: "error" | "stuck"; error: MockError; tips?: number; understood?: boolean };
+
+// Seat С12 is left for the live demo student (the extension's default seat).
+const roster: [seat: string, name: string, email: string, plan: Plan][] = [
+  ["С1", "Бат-Эрдэнэ", "bat@school.mn", { kind: "working" }],
+  ["С2", "Сараа", "saraa@school.mn", { kind: "working" }],
+  ["С3", "Тэмүүжин", "temuujin@school.mn", { kind: "error", error: nameError("summ", 3), tips: 1 }],
+  ["С4", "Номин", "nomin@school.mn", { kind: "working" }],
+  ["С5", "Хулан", "khulan@school.mn", { kind: "working" }],
+  ["С6", "Эрдэнэ", "erdene@school.mn", { kind: "absent" }],
+  ["С7", "Ану", "anu@school.mn", { kind: "working" }],
+  ["С8", "Түгөлдөр", "tuguldur@school.mn", { kind: "stuck", error: unclosed(3), tips: 3 }],
+  ["С9", "Марал", "maral@school.mn", { kind: "working" }],
+  ["С10", "Билгүүн", "bilguun@school.mn", { kind: "working" }],
+  ["С11", "Заяа", "zaya@school.mn", { kind: "stuck", error: nameError("reslt", 8), tips: 2 }],
+  ["С12", "Демо сурагч", "demo.student@classradar.mn", { kind: "absent" }],
+  ["С13", "Мөнх", "munkh@school.mn", { kind: "working" }],
+  ["С14", "Оюу", "oyu@school.mn", { kind: "working" }],
+  ["С15", "Ганболд", "ganbold@school.mn", { kind: "working" }],
+  [
+    "С16",
+    "Энхжин",
+    "enkhjin@school.mn",
+    { kind: "error", error: typeError(6), tips: 1, understood: true },
+  ],
+  ["С17", "Төгс", "tugs@school.mn", { kind: "working" }],
+  ["С18", "Солонго", "solongo@school.mn", { kind: "working" }],
+  ["С19", "Батбаяр", "batbayar@school.mn", { kind: "absent" }],
+  ["С20", "Уянга", "uyanga@school.mn", { kind: "working" }],
+  ["С21", "Даваа", "davaa@school.mn", { kind: "working" }],
+  ["С22", "Ариунаа", "ariunaa@school.mn", { kind: "working" }],
+  ["С23", "Лхагва", "lkhagva@school.mn", { kind: "stuck", error: indentError(5), tips: 1 }],
+  ["С24", "Цэцгээ", "tsetsgee@school.mn", { kind: "working" }],
+];
+
+// Earlier errors in the day that were since fixed, so repeats add up.
+const fixedEarlier: [email: string, error: MockError][] = [
+  ["bat@school.mn", nameError("totl", 4)],
+  ["saraa@school.mn", nameError("cnt", 12)],
+  ["nomin@school.mn", unclosed(2)],
+  ["maral@school.mn", nameError("Total", 2)],
+  ["oyu@school.mn", unclosed(1)],
+  ["munkh@school.mn", typeError(4)],
+];
+
+const call = async <T>(query: string, variables: Record<string, unknown>, field: string) => {
+  const response = await fetch(gatewayUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+  });
+  const body = (await response.json()) as {
+    data?: Record<string, T> | null;
+    errors?: { message: string }[];
+  };
+  const value = body.data?.[field];
+  if (value === undefined || value === null) {
+    throw new Error(`${field}: ${body.errors?.map((e) => e.message).join("; ") ?? "no data"}`);
+  }
+  return value;
 };
 
-const REPORT_ERROR = `mutation SeedReportError($input: ClassradarErrorInput!) {
-  classradarReportError(input: $input) { normalizedKey }
-}`;
+const report = (studentEmail: string, seat: string, error: MockError) =>
+  call<{ _id: string }>(
+    `mutation SeedReportError($input: ClassradarErrorInput!) {
+      classradarReportError(input: $input) { _id }
+    }`,
+    { input: { ...error, studentEmail, classCode, seat, source: "diagnostic" } },
+    "classradarReportError",
+  );
 
+const heartbeat = (studentEmail: string, seat: string, hasError: boolean) =>
+  call<boolean>(
+    `mutation SeedHeartbeat($studentEmail: String!, $classCode: String!, $seat: String, $hasError: Boolean!) {
+      classradarHeartbeat(studentEmail: $studentEmail, classCode: $classCode, seat: $seat, hasError: $hasError)
+    }`,
+    { studentEmail, classCode, seat, hasError },
+    "classradarHeartbeat",
+  );
+
+const helpMutation = (field: string, errorId: string, studentEmail: string) =>
+  call<{ hintsUsed: number }>(
+    `mutation SeedHelp($errorId: String!, $studentEmail: String!) {
+      ${field}(errorId: $errorId, studentEmail: $studentEmail) { hintsUsed }
+    }`,
+    { errorId, studentEmail },
+    field,
+  );
+
+await connectMongo();
 if (process.argv.includes("--reset")) {
-  await connectMongo();
-  const { deletedCount } = await ClassradarErrors.deleteMany({ classCode });
-  await disconnectMongo();
-  console.log(`Reset: removed ${deletedCount} errors of class ${classCode}`);
+  const errors = await ClassradarErrors.deleteMany({ classCode });
+  const students = await ClassradarStudents.deleteMany({ classCode });
+  console.log(
+    `Reset ${classCode}: ${errors.deletedCount} errors, ${students.deletedCount} students`,
+  );
 }
 
+for (const [seat, name, email] of roster) {
+  await ClassradarStudents.updateOne(
+    { subdomain, classCode, email },
+    { $set: { seat, name } },
+    { upsert: true },
+  );
+}
+
+const seatOf = new Map(roster.map(([seat, , email]) => [email, seat]));
 let sent = 0;
-for (const [name, seat] of students) {
-  for (const error of plan[name] ?? []) {
-    const response = await fetch(gatewayUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        query: REPORT_ERROR,
-        variables: {
-          input: {
-            ...error,
-            studentEmail: `${name}@school.mn`,
-            classCode,
-            seat,
-            source: "diagnostic",
-          },
-        },
-      }),
-    });
-    const body = (await response.json()) as { errors?: { message: string }[] };
-    if (body.errors) throw new Error(`${name}: ${body.errors.map((e) => e.message).join("; ")}`);
-    sent += 1;
+for (const [email, error] of fixedEarlier) {
+  await report(email, seatOf.get(email) ?? "", error);
+  sent += 1;
+}
+
+for (const [seat, , email, plan] of roster) {
+  if (plan.kind === "absent") continue;
+  if (plan.kind === "working") {
+    await heartbeat(email, seat, false);
+    continue;
+  }
+  const { _id } = await report(email, seat, plan.error);
+  sent += 1;
+  await heartbeat(email, seat, true);
+  for (let tip = 0; tip < (plan.tips ?? 0); tip += 1) {
+    await helpMutation("classradarRevealHint", _id, email);
+  }
+  if (plan.understood) await helpMutation("classradarMarkUnderstood", _id, email);
+  if (plan.kind === "stuck") {
+    const minutesAgo = 6 + Math.floor(Math.random() * 8);
+    await ClassradarStudents.updateOne(
+      { subdomain, classCode, email },
+      { $set: { errorSince: new Date(Date.now() - minutesAgo * 60000) } },
+    );
   }
 }
-console.log(`Seeded ${sent} errors from ${students.length} mock students into class ${classCode}`);
+
+await disconnectMongo();
+console.log(`Seeded class ${classCode}: ${roster.length} seats, ${sent} errors`);

@@ -105,3 +105,21 @@ export const markUnderstood = (gatewayUrl: string, errorId: string, studentEmail
     "classradarMarkUnderstood",
     HELP_TIMEOUT_MS,
   );
+
+const HEARTBEAT = `mutation ClassradarHeartbeat($studentEmail: String!, $classCode: String!, $seat: String, $hasError: Boolean!) {
+  classradarHeartbeat(studentEmail: $studentEmail, classCode: $classCode, seat: $seat, hasError: $hasError)
+}`;
+
+/** Tells the seat map the student is here, and whether their code has an error. */
+export const sendHeartbeat = (
+  gatewayUrl: string,
+  identity: { studentEmail: string; classCode: string; seat: string },
+  hasError: boolean,
+) =>
+  request<boolean>(
+    gatewayUrl,
+    HEARTBEAT,
+    { ...identity, seat: identity.seat || null, hasError },
+    "classradarHeartbeat",
+    5000,
+  );

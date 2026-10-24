@@ -49,8 +49,8 @@
         },
         "classradar.seat": {
           "type": "string",
-          "default": "A1",
-          "description": "Суудлын дугаар (жишээ нь A1, C4)"
+          "default": "С12",
+          "description": "Суудлын дугаар (жишээ нь С1, С12)"
         },
         "classradar.enabled": {
           "type": "boolean",
