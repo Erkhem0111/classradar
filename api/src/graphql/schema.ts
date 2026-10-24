@@ -7,6 +7,7 @@ import { manifest } from "../config.ts";
 import type { Context } from "../context.ts";
 import { personalize, tokensAround } from "../explain/fallback.ts";
 import { explainError, explainNow } from "../explain/index.ts";
+import { interviewFeedback } from "../explain/interview.ts";
 import { ClassradarStudents } from "../models/students.ts";
 import {
   ClassradarErrors,
@@ -117,6 +118,13 @@ export const typeDefs = gql`
     understood: Boolean!
   }
 
+  type ClassradarInterviewFeedback {
+    score: Int!
+    good: String!
+    improve: String!
+    source: ClassradarExplanationSource!
+  }
+
   type Query {
     classradarStatus: ClassradarStatus!
     classradarErrorHelp(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
@@ -132,6 +140,8 @@ export const typeDefs = gql`
     classradarRevealHint(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
     "Records that the student understood the error (first press wins)."
     classradarMarkUnderstood(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
+    "Gemma 4 feedback on one interview-practice answer (rule check when Gemma is down)."
+    classradarInterviewFeedback(question: String!, answer: String!): ClassradarInterviewFeedback!
     "Sent by the extension after each settled save: present, and with or without an error."
     classradarHeartbeat(
       studentEmail: String!
@@ -171,6 +181,11 @@ const requireUser = ({ user }: Context) => {
 
 const HINTS_TOTAL = 3;
 const STUCK_MINUTES = 5;
+
+const interviewSchema = z.object({
+  question: z.string().trim().min(1).max(500),
+  answer: z.string().max(4000),
+});
 
 const heartbeatSchema = z.object({
   studentEmail: z.string().trim().toLowerCase().email().max(200),
@@ -380,6 +395,13 @@ export const resolvers: GraphQLResolverMap<Context> = {
         { new: true },
       ).lean();
       return toHelp(updated ?? (await ClassradarErrors.findOne(filter).lean()), subdomain);
+    },
+
+    // TODO(auth): anonymous like the other student calls; nothing is stored.
+    classradarInterviewFeedback: async (_parent, args: unknown) => {
+      const parsed = interviewSchema.safeParse(args);
+      if (!parsed.success) throw badInput(parsed.error);
+      return interviewFeedback(parsed.data.question, parsed.data.answer);
     },
 
     // TODO(auth): anonymous like classradarReportError until student auth exists.

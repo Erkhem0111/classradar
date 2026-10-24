@@ -39,7 +39,7 @@ const looksLikeCode = (text: string) =>
  * Gemma 4 first writes its reasoning in <thought>…</thought>, which can quote
  * the JSON template too, so that part is dropped.
  */
-const extractJson = (reply: string) => {
+export const extractJson = (reply: string) => {
   const content = reply.replace(/<thought>[\s\S]*?<\/thought>/g, "");
   const start = content.indexOf("{");
   const end = content.lastIndexOf("}");
@@ -67,29 +67,42 @@ export const parseGemmaReply = (content: string, message = ""): Explanation | nu
 };
 
 /**
- * Asks Gemma 4 for an explanation of one error message. Only the message is
- * sent — never the student's code. Returns null on any failure or timeout so
- * the caller falls back to the built-in explanations.
+ * One chat completion that should come back as JSON. Ollama takes a system
+ * message and JSON mode; Gemma on Google's API takes neither, so a rejected
+ * request is retried with the prompt inline. Returns the raw reply text, or
+ * null on any failure or timeout.
  */
-export const askGemma = async (
+export const completeJson = async (
   config: GemmaConfig,
-  message: string,
-): Promise<Explanation | null> => {
-  const user = `Алдааны мессеж: ${message}`;
-  // Ollama takes a system message and JSON mode; Gemma on Google's API takes
-  // neither, so a rejected request is retried with the prompt inline. The
-  // reply parser copes with JSON wrapped in prose either way.
+  systemPrompt: string,
+  user: string,
+): Promise<string | null> => {
   const attempts = [
     {
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user", content: user },
       ],
     },
-    { messages: [{ role: "user", content: `${SYSTEM_PROMPT}\n\n${user}` }] },
+    { messages: [{ role: "user", content: `${systemPrompt}\n\n${user}` }] },
   ];
   const deadline = AbortSignal.timeout(config.timeoutMs);
+  // WSL and some school networks drop the odd connection: retry once while
+  // the deadline allows.
+  for (let round = 0; round < 2; round += 1) {
+    const reply = await tryAttempts(config, attempts, deadline);
+    if (reply !== "network") return reply;
+    if (deadline.aborted) return null;
+  }
+  return null;
+};
+
+const tryAttempts = async (
+  config: GemmaConfig,
+  attempts: Record<string, unknown>[],
+  deadline: AbortSignal,
+): Promise<string | null | "network"> => {
   try {
     for (const attempt of attempts) {
       const response = await fetch(`${config.url.replace(/\/$/, "")}/chat/completions`, {
@@ -107,9 +120,7 @@ export const askGemma = async (
         return null;
       }
       const completion = completionSchema.safeParse(await response.json());
-      return completion.success
-        ? parseGemmaReply(completion.data.choices[0]?.message.content ?? "", message)
-        : null;
+      return completion.success ? (completion.data.choices[0]?.message.content ?? null) : null;
     }
     return null;
   } catch (error) {
@@ -117,6 +128,16 @@ export const askGemma = async (
       "classradar: Gemma request failed:",
       error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : error,
     );
-    return null;
+    return deadline.aborted ? null : "network";
   }
+};
+
+/**
+ * Asks Gemma 4 for an explanation of one error message. Only the message is
+ * sent — never the student's code. Returns null on any failure or timeout so
+ * the caller falls back to the built-in explanations.
+ */
+export const askGemma = async (config: GemmaConfig, message: string) => {
+  const reply = await completeJson(config, SYSTEM_PROMPT, `Алдааны мессеж: ${message}`);
+  return reply === null ? null : parseGemmaReply(reply, message);
 };

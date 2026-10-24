@@ -7,7 +7,7 @@ export type ExplanationSource = "gemma" | "fallback";
 
 export type ErrorExplanation = Explanation & { source: ExplanationSource; model: string | null };
 
-const gemmaConfig: GemmaConfig | null = env.GEMMA_URL
+export const gemmaConfig: GemmaConfig | null = env.GEMMA_URL
   ? {
       url: env.GEMMA_URL,
       model: env.GEMMA_MODEL,

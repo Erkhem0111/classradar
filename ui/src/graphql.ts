@@ -41,3 +41,14 @@ export const CLASS_RADAR_QUERY = gql(`
     }
   }
 `);
+
+export const INTERVIEW_FEEDBACK_MUTATION = gql(`
+  mutation classradarInterviewFeedback($question: String!, $answer: String!) {
+    classradarInterviewFeedback(question: $question, answer: $answer) {
+      score
+      good
+      improve
+      source
+    }
+  }
+`);

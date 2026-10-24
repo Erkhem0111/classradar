@@ -1,3 +1,4 @@
+import { setDefaultResultOrder } from "node:dns";
 import { createServer } from "node:http";
 import { ApolloServer } from "@apollo/server";
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
@@ -9,6 +10,9 @@ import { type Context, createContext } from "./context.ts";
 import { connectMongo, disconnectMongo } from "./db.ts";
 import { joinErxesGateway } from "./gateway.ts";
 import { resolvers, typeDefs } from "./graphql/schema.ts";
+
+// Prefer IPv4: IPv6 routes to the Gemma API stall on WSL and many school networks.
+setDefaultResultOrder("ipv4first");
 
 await connectMongo();
 
