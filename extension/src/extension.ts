@@ -1,10 +1,11 @@
 import * as vscode from "vscode";
-import { fetchHelp, markUnderstood, revealHint, sendReport } from "./client";
+import { type ErrorHelp, fetchHelp, markUnderstood, revealHint, sendReport } from "./client";
 import {
   HOVER_COMMANDS,
   OFFLINE,
   REVEAL_COMMAND,
   SHOW_TIP_COMMAND,
+  SKELETON,
   UNDERSTOOD_COMMAND,
   renderHelp,
 } from "./hover";
@@ -16,13 +17,15 @@ import {
   reportKey,
 } from "./payload";
 
-// Errors are read only once the student has stopped typing for this long, so
+// Errors are read only once the file is saved and untouched for this long, so
 // half-typed code (autosave included) is never reported.
-const QUIET_MS = 3000;
+const QUIET_MS = 1000;
 // Language servers often publish diagnostics a moment after the save, so a
 // saved file stays "watched" this long after going quiet.
 const WATCH_AFTER_SAVE_MS = QUIET_MS + 4000;
-const SETTLE_MS = 800;
+const SETTLE_MS = 300;
+// A skeleton card turns into the real one if it arrives within this time.
+const SKELETON_REFRESH_MS = 10000;
 
 const readConfig = () => {
   const config = vscode.workspace.getConfiguration("classradar");
@@ -47,6 +50,12 @@ export const activate = (context: vscode.ExtensionContext) => {
   const watched = new Map<string, number>();
   const timers = new Map<string, NodeJS.Timeout>();
   const lastEditAt = new Map<string, number>();
+  // Files whose report is being sent right now.
+  const sending = new Set<string>();
+  // errorId → help, fetched right after reporting so hovers never wait.
+  const helps = new Map<string, ErrorHelp>();
+  // The error whose hover is showing a skeleton, to swap in the real card.
+  let awaitingCard: { key: string; line: number; character: number; until: number } | null = null;
   let sentCount = 0;
 
   const showStatus = (state: "ok" | "offline" | "off") => {
@@ -82,37 +91,30 @@ export const activate = (context: vscode.ExtensionContext) => {
     const file = vscode.workspace.asRelativePath(uri, false);
     const lines = Array.from({ length: document.lineCount }, (_, i) => document.lineAt(i).text);
 
-    const primary = pickPrimaryError(
-      vscode.languages
-        .getDiagnostics(uri)
-        .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error)
-        // Position exposes line/character as getters, so they must be copied
-        // explicitly; spreading it yields an empty object.
-        .map(({ range, message }) => ({
-          line: range.start.line,
-          character: range.start.character,
-          message,
-        })),
-    );
+    const primary = primaryError(uri);
     const reports = primary
       ? [buildReport(identity, { file, line: primary.line, message: primary.message }, lines)]
       : [];
 
     let offline = false;
+    sending.add(uri.toString());
     for (const report of tracker.diff(file, reports)) {
       const result = await sendReport(gatewayUrl, report);
       if (result.ok) {
         sentCount += 1;
-        sentIds.set(reportKey(report), result.value._id);
+        const key = reportKey(report);
+        sentIds.set(key, result.value._id);
         log.appendLine(
           `→ ${report.file}:${report.line} ${report.message}  [${result.value.normalizedKey}]`,
         );
+        void loadHelp(result.value._id).then(() => swapSkeleton(key));
       } else {
         offline = true;
         tracker.forget(report);
         log.appendLine(`✗ ${report.file}:${report.line} илгээж чадсангүй: ${result.error}`);
       }
     }
+    sending.delete(uri.toString());
     showStatus(offline ? "offline" : "ok");
   };
 
@@ -126,6 +128,68 @@ export const activate = (context: vscode.ExtensionContext) => {
         void reportFile(uri);
       }, delayMs),
     );
+  }
+
+  /** The first error in the file: the only one reported and explained. */
+  function primaryError(uri: vscode.Uri) {
+    return pickPrimaryError(
+      vscode.languages
+        .getDiagnostics(uri)
+        .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error)
+        // Position exposes line/character as getters, so they must be copied
+        // explicitly; spreading it yields an empty object.
+        .map(({ range, message }) => ({
+          line: range.start.line,
+          character: range.start.character,
+          message,
+        })),
+    );
+  }
+
+  async function loadHelp(errorId: string) {
+    const { gatewayUrl, identity } = readConfig();
+    const result = await fetchHelp(gatewayUrl, errorId, identity.studentEmail);
+    if (!result.ok) {
+      log.appendLine(`✗ тайлбар авч чадсангүй: ${result.error}`);
+      return undefined;
+    }
+    helps.set(errorId, result.value);
+    return result.value;
+  }
+
+  /**
+   * Local state changes first so the card reacts instantly; the server is
+   * told in the background. Its answer never moves progress backwards, since
+   * a later click may already be ahead of it.
+   */
+  const syncFromServer = (server: ErrorHelp) => {
+    const local = helps.get(server.errorId);
+    helps.set(server.errorId, {
+      ...server,
+      hintsUsed: Math.max(server.hintsUsed, local?.hintsUsed ?? 0),
+      understood: server.understood || Boolean(local?.understood),
+    });
+  };
+
+  const openNextTip = (help: ErrorHelp) => {
+    if (help.hintsUsed >= help.hintsTotal) return;
+    helps.set(help.errorId, { ...help, hintsUsed: help.hintsUsed + 1 });
+    const { gatewayUrl, identity } = readConfig();
+    void revealHint(gatewayUrl, help.errorId, identity.studentEmail).then((result) => {
+      if (result.ok) {
+        syncFromServer(result.value);
+        log.appendLine(`💡 зөвлөгөө ${result.value.hintsUsed}/${result.value.hintsTotal}`);
+      } else {
+        log.appendLine(`✗ зөвлөгөө тэмдэглэж чадсангүй: ${result.error}`);
+      }
+    });
+  };
+
+  function swapSkeleton(key: string) {
+    if (!awaitingCard || awaitingCard.key !== key) return;
+    const { line, character, until } = awaitingCard;
+    awaitingCard = null;
+    if (Date.now() < until) void reopenHover(line, character);
   }
 
   // Which tip each error's hover shows; unset = the newest revealed one.
@@ -155,32 +219,42 @@ export const activate = (context: vscode.ExtensionContext) => {
         .find((d) => d.severity === vscode.DiagnosticSeverity.Error && d.range.contains(position));
       if (!diagnostic) return undefined;
 
-      const { gatewayUrl, identity } = readConfig();
+      const { identity } = readConfig();
       const file = vscode.workspace.asRelativePath(document.uri, false);
       const report = buildReport(
         identity,
         { file, line: diagnostic.range.start.line, message: diagnostic.message },
         [],
       );
-      // Only the reported (first, settled) error gets our card; others keep
-      // just the editor's own hover.
-      const errorId = sentIds.get(reportKey(report));
-      if (!errorId) return undefined;
+      const key = reportKey(report);
+      const { start } = diagnostic.range;
+      const errorId = sentIds.get(key);
 
-      let help = await fetchHelp(gatewayUrl, errorId, identity.studentEmail);
+      if (!errorId) {
+        // Saved and on its way: show the card's skeleton, swapped for the real
+        // card when it arrives. Any other error keeps just the editor's hover.
+        const primary = primaryError(document.uri);
+        const uri = document.uri.toString();
+        const isPrimary = primary?.line === start.line && primary.character === start.character;
+        if (!isPrimary || document.isDirty || !(timers.has(uri) || sending.has(uri))) {
+          return undefined;
+        }
+        awaitingCard = {
+          key,
+          line: start.line,
+          character: start.character,
+          until: Date.now() + SKELETON_REFRESH_MS,
+        };
+        return new vscode.Hover(markdown(SKELETON), diagnostic.range);
+      }
+
+      const help = helps.get(errorId) ?? (await loadHelp(errorId));
+      if (!help) return new vscode.Hover(markdown(OFFLINE), diagnostic.range);
       // The card always opens on tip 1, as in the design; seeing it counts.
-      if (help.ok && help.value.hintsUsed === 0) {
-        help = await revealHint(gatewayUrl, errorId, identity.studentEmail);
-      }
-      if (!help.ok) {
-        log.appendLine(`✗ тайлбар авч чадсангүй: ${help.error}`);
-        return new vscode.Hover(markdown(OFFLINE), diagnostic.range);
-      }
-      const view = tipViews.get(errorId) ?? help.value.hintsUsed - 1;
-      return new vscode.Hover(
-        markdown(renderHelp(help.value, diagnostic.range.start, view)),
-        diagnostic.range,
-      );
+      if (help.hintsUsed === 0) openNextTip(help);
+      const current = helps.get(errorId) ?? help;
+      const view = tipViews.get(errorId) ?? current.hintsUsed - 1;
+      return new vscode.Hover(markdown(renderHelp(current, start, view)), diagnostic.range);
     },
   };
 
@@ -190,18 +264,10 @@ export const activate = (context: vscode.ExtensionContext) => {
     vscode.commands.registerCommand(
       REVEAL_COMMAND,
       async (errorId: unknown, line: unknown, character: unknown) => {
-        if (typeof errorId !== "string") return;
-        const { gatewayUrl, identity } = readConfig();
-        const result = await revealHint(gatewayUrl, errorId, identity.studentEmail);
-        if (!result.ok) {
-          log.appendLine(`✗ зөвлөгөө авч чадсангүй: ${result.error}`);
-          void vscode.window.showWarningMessage("Ангийн радар: зөвлөгөө авч чадсангүй.");
-          return;
-        }
-        log.appendLine(
-          `💡 зөвлөгөө ${result.value.hintsUsed}/${result.value.hintsTotal} (${errorId})`,
-        );
-        tipViews.delete(errorId);
+        const help = typeof errorId === "string" ? helps.get(errorId) : undefined;
+        if (!help) return;
+        openNextTip(help);
+        tipViews.delete(help.errorId);
         await reopenHover(line, character);
       },
     ),
@@ -216,15 +282,18 @@ export const activate = (context: vscode.ExtensionContext) => {
     vscode.commands.registerCommand(
       UNDERSTOOD_COMMAND,
       async (errorId: unknown, line: unknown, character: unknown) => {
-        if (typeof errorId !== "string") return;
-        const { gatewayUrl, identity } = readConfig();
-        const result = await markUnderstood(gatewayUrl, errorId, identity.studentEmail);
-        if (!result.ok) {
-          log.appendLine(`✗ "ойлголоо" илгээж чадсангүй: ${result.error}`);
-          return;
-        }
-        log.appendLine(`✓ ойлгосон, ${result.value.hintsUsed} зөвлөгөөгөөр (${errorId})`);
+        const help = typeof errorId === "string" ? helps.get(errorId) : undefined;
+        if (!help) return;
+        helps.set(help.errorId, { ...help, understood: true });
         await reopenHover(line, character);
+        const { gatewayUrl, identity } = readConfig();
+        const result = await markUnderstood(gatewayUrl, help.errorId, identity.studentEmail);
+        if (result.ok) {
+          syncFromServer(result.value);
+          log.appendLine(`✓ ойлгосон, ${result.value.hintsUsed} зөвлөгөөгөөр`);
+        } else {
+          log.appendLine(`✗ "ойлголоо" илгээж чадсангүй: ${result.error}`);
+        }
       },
     ),
     status,

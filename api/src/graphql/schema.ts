@@ -70,7 +70,7 @@ export const typeDefs = gql`
     fallback
   }
 
-  "Mongolian help for one reported error. Hints are revealed one at a time."
+  "Mongolian help for one reported error. Tips are opened one at a time (hintsUsed)."
   type ClassradarErrorHelp {
     errorId: String!
     message: String!
@@ -78,7 +78,7 @@ export const typeDefs = gql`
     "A few words naming the problem."
     title: String!
     explanation: String!
-    "Only the hints revealed so far (hintsUsed of them)."
+    "All tips, so the client can switch instantly; hintsUsed says how many the student opened."
     hints: [String!]!
     hintsUsed: Int!
     hintsTotal: Int!
@@ -163,7 +163,7 @@ const toHelp = async (
     line: error.line,
     title: help.title,
     explanation: help.explanation,
-    hints: help.hints.slice(0, hintsUsed),
+    hints: help.hints,
     hintsUsed,
     hintsTotal: HINTS_TOTAL,
     understood: Boolean(error.understoodAt),

@@ -55,3 +55,10 @@ test("understood, and all tips seen", () => {
   assert.match(done, /Бүх зөвлөгөөг харлаа/);
   assert.match(done, /бэлэн тайлбар/);
 });
+
+test("server sends all tips, but only opened ones are shown", () => {
+  const md = renderHelp({ ...help, hints: ["Нэг.", "Хоёр.", "Гурав."], hintsUsed: 1 }, at);
+  assert.match(md, /Нэг\./);
+  assert.ok(!md.includes("Хоёр.") && !md.includes("Гурав."));
+  assert.ok(md.includes(`[Дараах ▶]${link(REVEAL_COMMAND, ["abc", 1, 12])}`));
+});

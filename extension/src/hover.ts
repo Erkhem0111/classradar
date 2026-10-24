@@ -40,8 +40,10 @@ export const renderHelp = (help: ErrorHelp, at: Position, view = help.hintsUsed 
     help.explanation,
   ];
 
-  const shown = Math.min(Math.max(view, 0), help.hints.length - 1);
-  const hint = help.hints[shown];
+  // The server sends all tips; only the opened ones may be shown.
+  const opened = help.hints.slice(0, help.hintsUsed);
+  const shown = Math.min(Math.max(view, 0), opened.length - 1);
+  const hint = opened[shown];
   if (hint !== undefined) {
     const angle = TIP_ANGLES[shown] ?? "";
     parts.push(
@@ -61,7 +63,7 @@ export const renderHelp = (help: ErrorHelp, at: Position, view = help.hintsUsed 
       ? commandLink("◀ Өмнөх", SHOW_TIP_COMMAND, [help.errorId, shown - 1, ...position])
       : "◁ Өмнөх";
   const next =
-    shown < help.hints.length - 1
+    shown < opened.length - 1
       ? commandLink("Дараах ▶", SHOW_TIP_COMMAND, [help.errorId, shown + 1, ...position])
       : help.hintsUsed < help.hintsTotal
         ? commandLink("Дараах ▶", REVEAL_COMMAND, [help.errorId, ...position])
@@ -82,6 +84,20 @@ export const renderHelp = (help: ErrorHelp, at: Position, view = help.hintsUsed 
   parts.push("", `<sub>Ангийн радар · ${source}</sub>`);
   return parts.join("\n");
 };
+
+// Placeholder bars in the card's shape while the explanation is on its way.
+export const SKELETON = [
+  "🛰️ **Ангийн радар**",
+  "",
+  "### ░░░░░░░░░░░░",
+  "",
+  "░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░",
+  "░░░░░░░░░░░░░░░░░░",
+  "",
+  "💡 ░░░░░░░░ ○○○",
+  "",
+  "<sub>⏳ Тайлбар бэлдэж байна…</sub>",
+].join("\n");
 
 export const OFFLINE =
   "🛰️ **Ангийн радар**\n\nСервертэй холбогдож чадсангүй. Түр хүлээгээд дахин хулганаа аваачаарай.";
