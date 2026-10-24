@@ -3,21 +3,33 @@ import type { ErrorHelp } from "./client";
 
 export const REVEAL_COMMAND = "classradar.revealHint";
 
+/** Each tip looks at the error from its own angle, in this order. */
+const TIP_TITLES = ["🔍 Хаанаас хайх вэ", "🧪 Яаж шалгах вэ", "🧠 Цаад санаа"];
+
 /** `at` is the error position, so the reveal command can reopen the hover there. */
 export const renderHelp = (help: ErrorHelp, at: { line: number; character: number }) => {
-  const parts = [`**🛰️ Ангийн радар**`, "", help.explanation];
-  help.hints.forEach((hint, index) => {
-    parts.push("", `💡 **Сэжүүр ${index + 1}/${help.hintsTotal}:** ${hint}`);
-  });
+  const parts = [`**🛰️ Ангийн радар**`, "", help.explanation, ""];
+
+  // The link sits right under the explanation and the newest tip right under
+  // the link: hovers are height-limited, so anything lower may stay hidden.
   if (help.hintsUsed < help.hintsTotal) {
     const args = encodeURIComponent(JSON.stringify([help.errorId, at.line, at.character]));
+    const label = help.hintsUsed === 0 ? "Зөвлөгөө авах" : "Дараагийн зөвлөгөө";
     parts.push(
-      "",
-      `[💡 Сэжүүр харах (${help.hintsUsed + 1}/${help.hintsTotal})](command:${REVEAL_COMMAND}?${args})`,
+      `[💡 ${label} (${help.hintsUsed + 1}/${help.hintsTotal})](command:${REVEAL_COMMAND}?${args})`,
     );
   } else {
-    parts.push("", "_Бүх сэжүүрийг харлаа. Одоо өөрөө оролдоод үз! Гацвал багшаасаа асуугаарай._");
+    parts.push("_Бүх зөвлөгөөг харлаа. Одоо өөрөө оролдоод үз! Гацвал багшаасаа асуугаарай._");
   }
+
+  help.hints
+    .map((hint, index) => {
+      const title = TIP_TITLES[index] ?? `Зөвлөгөө ${index + 1}`;
+      return `**${title}** (${index + 1}/${help.hintsTotal}): ${hint}`;
+    })
+    .reverse()
+    .forEach((tip) => parts.push("", tip));
+
   const source = help.source === "gemma" ? `Gemma 4 (${help.model ?? "gemma"})` : "бэлэн тайлбар";
   parts.push("", `<sub>Тайлбар: ${source}</sub>`);
   return parts.join("\n");

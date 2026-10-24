@@ -145,12 +145,12 @@ export const activate = (context: vscode.ExtensionContext) => {
         const { gatewayUrl, identity } = readConfig();
         const result = await revealHint(gatewayUrl, errorId, identity.studentEmail);
         if (!result.ok) {
-          log.appendLine(`✗ сэжүүр авч чадсангүй: ${result.error}`);
-          void vscode.window.showWarningMessage("Ангийн радар: сэжүүр авч чадсангүй.");
+          log.appendLine(`✗ зөвлөгөө авч чадсангүй: ${result.error}`);
+          void vscode.window.showWarningMessage("Ангийн радар: зөвлөгөө авч чадсангүй.");
           return;
         }
         log.appendLine(
-          `💡 сэжүүр ${result.value.hintsUsed}/${result.value.hintsTotal} (${errorId})`,
+          `💡 зөвлөгөө ${result.value.hintsUsed}/${result.value.hintsTotal} (${errorId})`,
         );
         // showHover opens at the cursor, so move it to the error first.
         const editor = vscode.window.activeTextEditor;
