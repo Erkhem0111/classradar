@@ -86,7 +86,13 @@ export const activate = (context: vscode.ExtensionContext) => {
       vscode.languages
         .getDiagnostics(uri)
         .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error)
-        .map((diagnostic) => ({ ...diagnostic.range.start, message: diagnostic.message })),
+        // Position exposes line/character as getters, so they must be copied
+        // explicitly; spreading it yields an empty object.
+        .map(({ range, message }) => ({
+          line: range.start.line,
+          character: range.start.character,
+          message,
+        })),
     );
     const reports = primary
       ? [buildReport(identity, { file, line: primary.line, message: primary.message }, lines)]
