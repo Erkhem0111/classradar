@@ -9,7 +9,8 @@
     "start": "node --env-file-if-exists=../.env dist/main.js",
     "check": "tsc --noEmit",
     "schema:print": "tsx src/print-schema.ts",
-    "seed:demo": "tsx --env-file-if-exists=../.env src/seed-demo.ts"
+    "seed:demo": "tsx --env-file-if-exists=../.env src/seed-demo.ts",
+    "test": "node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@apollo/server": "^5.5.1",

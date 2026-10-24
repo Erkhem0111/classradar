@@ -32,6 +32,12 @@ const envSchema = z.object({
   UI_ENTRY_URL: optional,
   LOAD_BALANCER_ADDRESS: optional,
   RELEASE_VERSION: optional,
+  // OpenAI-compatible base URL serving Gemma 4, e.g. Ollama's
+  // http://localhost:11434/v1. Unset = always use the built-in explanations.
+  GEMMA_URL: optional,
+  GEMMA_MODEL: z.string().default("gemma4:e2b"),
+  GEMMA_API_KEY: optional,
+  GEMMA_TIMEOUT_MS: z.coerce.number().int().default(8000),
 });
 
 export const env = envSchema.parse(process.env);

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
-import { sendReport } from "./client";
-import { type StudentIdentity, SentTracker, buildReport } from "./payload";
+import { fetchHelp, revealHint, sendReport } from "./client";
+import { NOT_SENT_YET, OFFLINE, REVEAL_COMMAND, renderHelp } from "./hover";
+import { type StudentIdentity, SentTracker, buildReport, reportKey } from "./payload";
 
 // Language servers often publish diagnostics a moment after the save, so a
 // saved file stays "watched" for this long and late diagnostics still count.
@@ -25,6 +26,8 @@ export const activate = (context: vscode.ExtensionContext) => {
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   status.command = "classradar.pickSeat";
   const tracker = new SentTracker();
+  // reportKey → server error id, so a hover can ask for that error's help.
+  const sentIds = new Map<string, string>();
   const watched = new Map<string, number>();
   const timers = new Map<string, NodeJS.Timeout>();
   let sentCount = 0;
@@ -74,8 +77,9 @@ export const activate = (context: vscode.ExtensionContext) => {
       const result = await sendReport(gatewayUrl, report);
       if (result.ok) {
         sentCount += 1;
+        sentIds.set(reportKey(report), result.value._id);
         log.appendLine(
-          `→ ${report.file}:${report.line} ${report.message}  [${result.normalizedKey}]`,
+          `→ ${report.file}:${report.line} ${report.message}  [${result.value.normalizedKey}]`,
         );
       } else {
         offline = true;
@@ -98,8 +102,65 @@ export const activate = (context: vscode.ExtensionContext) => {
     );
   };
 
+  const markdown = (value: string) => {
+    const md = new vscode.MarkdownString(value);
+    md.supportHtml = true;
+    md.isTrusted = { enabledCommands: [REVEAL_COMMAND] };
+    return md;
+  };
+
+  const hoverProvider: vscode.HoverProvider = {
+    provideHover: async (document, position) => {
+      const diagnostic = vscode.languages
+        .getDiagnostics(document.uri)
+        .find((d) => d.severity === vscode.DiagnosticSeverity.Error && d.range.contains(position));
+      if (!diagnostic) return undefined;
+
+      const { gatewayUrl, identity } = readConfig();
+      const file = vscode.workspace.asRelativePath(document.uri, false);
+      const report = buildReport(
+        identity,
+        { file, line: diagnostic.range.start.line, message: diagnostic.message },
+        [],
+      );
+      const errorId = sentIds.get(reportKey(report));
+      if (!errorId) return new vscode.Hover(markdown(NOT_SENT_YET), diagnostic.range);
+
+      const help = await fetchHelp(gatewayUrl, errorId, identity.studentEmail);
+      if (!help.ok) log.appendLine(`✗ тайлбар авч чадсангүй: ${help.error}`);
+      return new vscode.Hover(
+        markdown(help.ok ? renderHelp(help.value, diagnostic.range.start) : OFFLINE),
+        diagnostic.range,
+      );
+    },
+  };
+
   context.subscriptions.push(
     log,
+    vscode.languages.registerHoverProvider({ scheme: "file" }, hoverProvider),
+    vscode.commands.registerCommand(
+      REVEAL_COMMAND,
+      async (errorId: unknown, line: unknown, character: unknown) => {
+        if (typeof errorId !== "string") return;
+        const { gatewayUrl, identity } = readConfig();
+        const result = await revealHint(gatewayUrl, errorId, identity.studentEmail);
+        if (!result.ok) {
+          log.appendLine(`✗ сэжүүр авч чадсангүй: ${result.error}`);
+          void vscode.window.showWarningMessage("Ангийн радар: сэжүүр авч чадсангүй.");
+          return;
+        }
+        log.appendLine(
+          `💡 сэжүүр ${result.value.hintsUsed}/${result.value.hintsTotal} (${errorId})`,
+        );
+        // showHover opens at the cursor, so move it to the error first.
+        const editor = vscode.window.activeTextEditor;
+        if (editor && typeof line === "number" && typeof character === "number") {
+          const position = new vscode.Position(line, character);
+          editor.selection = new vscode.Selection(position, position);
+        }
+        await vscode.commands.executeCommand("editor.action.showHover");
+      },
+    ),
     status,
     vscode.workspace.onDidSaveTextDocument((document) => {
       if (document.uri.scheme !== "file") return;

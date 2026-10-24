@@ -2,8 +2,10 @@ import type { GraphQLResolverMap } from "@apollo/subgraph";
 import { GraphQLError } from "graphql";
 import { gql } from "graphql-tag";
 import { z } from "zod";
+import { isValidObjectId } from "mongoose";
 import { manifest } from "../config.ts";
 import type { Context } from "../context.ts";
+import { explainError } from "../explain/index.ts";
 import {
   ClassradarErrors,
   ERROR_SOURCES,
@@ -63,14 +65,35 @@ export const typeDefs = gql`
     source: ClassradarErrorSource!
   }
 
+  enum ClassradarExplanationSource {
+    gemma
+    fallback
+  }
+
+  "Mongolian help for one reported error. Hints are revealed one at a time."
+  type ClassradarErrorHelp {
+    errorId: String!
+    message: String!
+    explanation: String!
+    "Only the hints revealed so far (hintsUsed of them)."
+    hints: [String!]!
+    hintsUsed: Int!
+    hintsTotal: Int!
+    source: ClassradarExplanationSource!
+    model: String
+  }
+
   type Query {
     classradarStatus: ClassradarStatus!
+    classradarErrorHelp(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
     "Today's (Ulaanbaatar time) three most repeated errors in a class."
     classradarTopErrors(classCode: String!): [ClassradarTopError!]!
   }
 
   type Mutation {
     classradarReportError(input: ClassradarErrorInput!): ClassradarError!
+    "Reveals the next hint (at most 3) and records it in hintsUsed."
+    classradarRevealHint(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
   }
 `;
 
@@ -100,6 +123,38 @@ const requireUser = ({ user }: Context) => {
   return user;
 };
 
+const HINTS_TOTAL = 3;
+
+type HelpArgs = { errorId: string; studentEmail: string };
+
+// TODO(auth): students do not sign in to erxes yet, so the error id plus the
+// reporting student's email stand in for ownership.
+const ownedErrorFilter = ({ errorId, studentEmail }: HelpArgs, subdomain: string) => {
+  if (!isValidObjectId(errorId)) {
+    throw new GraphQLError("Error not found", { extensions: { code: "NOT_FOUND" } });
+  }
+  return { _id: errorId, subdomain, studentEmail: studentEmail.trim().toLowerCase() };
+};
+
+const toHelp = async (
+  error: { _id: unknown; message: string; normalizedKey: string; hintsUsed: number } | null,
+  subdomain: string,
+) => {
+  if (!error) throw new GraphQLError("Error not found", { extensions: { code: "NOT_FOUND" } });
+  const help = await explainError(subdomain, error.normalizedKey, error.message);
+  const hintsUsed = Math.min(error.hintsUsed, HINTS_TOTAL);
+  return {
+    errorId: String(error._id),
+    message: error.message,
+    explanation: help.explanation,
+    hints: help.hints.slice(0, hintsUsed),
+    hintsUsed,
+    hintsTotal: HINTS_TOTAL,
+    source: help.source,
+    model: help.model,
+  };
+};
+
 export const resolvers: GraphQLResolverMap<Context> = {
   Query: {
     classradarStatus: (_parent, _args, { subdomain, user }) => ({
@@ -109,6 +164,9 @@ export const resolvers: GraphQLResolverMap<Context> = {
       userId: user?._id ?? null,
       userEmail: user?.email ?? null,
     }),
+
+    classradarErrorHelp: async (_parent, args: HelpArgs, { subdomain }) =>
+      toHelp(await ClassradarErrors.findOne(ownedErrorFilter(args, subdomain)).lean(), subdomain),
 
     // Teacher view: requires a signed-in erxes user.
     classradarTopErrors: async (_parent, args: { classCode: string }, context) => {
@@ -155,7 +213,22 @@ export const resolvers: GraphQLResolverMap<Context> = {
         snippet: clampSnippet(input.snippet),
         normalizedKey: normalizeErrorKey(input.message),
       });
+      // Warm the explanation cache so the student's hover is instant.
+      void explainError(subdomain, doc.normalizedKey, doc.message).catch((error: unknown) =>
+        console.error("classradar: explanation prefetch failed", error),
+      );
       return { ...doc.toObject(), _id: doc._id.toString(), createdAt: doc.createdAt.toISOString() };
+    },
+
+    classradarRevealHint: async (_parent, args: HelpArgs, { subdomain }) => {
+      const filter = ownedErrorFilter(args, subdomain);
+      // Atomic: concurrent clicks cannot skip past or beyond the last hint.
+      const updated = await ClassradarErrors.findOneAndUpdate(
+        { ...filter, hintsUsed: { $lt: HINTS_TOTAL } },
+        { $inc: { hintsUsed: 1 } },
+        { new: true },
+      ).lean();
+      return toHelp(updated ?? (await ClassradarErrors.findOne(filter).lean()), subdomain);
     },
   },
 };
