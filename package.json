@@ -7,10 +7,11 @@
     "dev:api": "pnpm --filter classradar_api dev",
     "dev:ui": "pnpm run codegen && pnpm --filter classradar_ui dev",
     "codegen": "pnpm --filter classradar_api schema:print && pnpm --filter classradar_ui codegen",
-    "build": "pnpm run codegen && pnpm --filter classradar_api build && pnpm --filter classradar_ui build",
-    "check": "pnpm run codegen && pnpm --filter classradar_api check && pnpm --filter classradar_ui check",
+    "build": "pnpm run codegen && pnpm --filter classradar_api build && pnpm --filter classradar_ui build && pnpm --filter classradar_vscode build",
+    "check": "pnpm run codegen && pnpm --filter classradar_api check && pnpm --filter classradar_ui check && pnpm --filter classradar_vscode check && pnpm --filter classradar_vscode test",
     "lint": "oxlint",
-    "fmt": "oxfmt"
+    "fmt": "oxfmt",
+    "seed:demo": "pnpm --filter classradar_api seed:demo"
   },
   "devDependencies": {
     "oxfmt": "^0.71.0",

@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=../.env dist/main.js",
     "check": "tsc --noEmit",
-    "schema:print": "tsx src/print-schema.ts"
+    "schema:print": "tsx src/print-schema.ts",
+    "seed:demo": "tsx --env-file-if-exists=../.env src/seed-demo.ts"
   },
   "dependencies": {
     "@apollo/server": "^5.5.1",
