@@ -1,0 +1,20 @@
+{
+  "name": "classradar",
+  "title": "Class Radar",
+  "description": "Classroom error radar for erxes",
+  "version": "0.1.0",
+  "api": {
+    "framework": "express",
+    "runtime": "node",
+    "port": 3399,
+    "graphql": "/graphql",
+    "health": "/health"
+  },
+  "ui": {
+    "framework": "react",
+    "port": 3099,
+    "name": "classradar",
+    "remote": "classradar_ui",
+    "path": "classradar"
+  }
+}
