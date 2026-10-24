@@ -388,21 +388,36 @@ const TopErrors = ({ items }: { items: ClassradarDashboardQuery["classradarTopEr
 // The design's dark violet room, made by switching this page to erxes's own
 // dark theme and pointing its tokens at the design's colors: every erxes-ui
 // component below picks them up, no extra styling.
+const RADAR_COLORS: Record<string, string> = {
+  background: "#120A26",
+  foreground: "#F1EEFA",
+  primary: "#8A63FF",
+  "primary-foreground": "#FFFFFF",
+  secondary: "#2A1A56",
+  "secondary-foreground": "#F1EEFA",
+  muted: "#1E1040",
+  "muted-foreground": "#A9A3BF",
+  accent: "#24124F",
+  "accent-foreground": "#F1EEFA",
+  border: "#2E2252",
+  input: "#2E2252",
+  ring: "#8A63FF",
+  success: "#3FE0B0",
+  warning: "#FFB547",
+  destructive: "#FF7A7A",
+  "destructive-foreground": "#FFFFFF",
+  info: "#7FB2FF",
+};
+
+// Utilities read `--color-*`, which the host resolves once on :root from the
+// raw tokens, so both names are set here for the overrides to reach them.
 const RADAR_TOKENS = {
-  "--background": "#120A26",
-  "--foreground": "#F1EEFA",
-  "--primary": "#8A63FF",
-  "--primary-foreground": "#FFFFFF",
-  "--secondary": "#2A1A56",
-  "--muted": "#1E1040",
-  "--muted-foreground": "#A9A3BF",
-  "--accent": "#24124F",
-  "--border": "#2E2252",
-  "--input": "#2E2252",
-  "--ring": "#8A63FF",
-  "--success": "#3FE0B0",
-  "--warning": "#FFB547",
-  "--destructive": "#FF7A7A",
+  ...Object.fromEntries(
+    Object.entries(RADAR_COLORS).flatMap(([name, value]) => [
+      [`--${name}`, value],
+      [`--color-${name}`, value],
+    ]),
+  ),
   background: "radial-gradient(1100px 600px at 50% 0%, #24124F 0%, #0B0716 62%)",
 } as CSSProperties;
 
