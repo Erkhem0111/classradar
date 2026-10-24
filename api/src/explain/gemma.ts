@@ -15,7 +15,7 @@ const SYSTEM_PROMPT = `Чи 13-18 насны програмчлал сурч б�
 - "explanation": алдаа юу гэсэн үг болохыг 1-2 өгүүлбэрээр энгийн монгол хэлээр тайлбарла.
 - "hints": яг 3 зөвлөгөө, тус бүр 1 өгүүлбэр, өөр өөр өнцгөөс, давхардалгүй:
   1) Кодын хаана нь хайх вэ. 2) Яаж шалгаж, туршиж үзэх вэ. 3) Энэ алдааны цаад санаа, дүрэм.
-ХАТУУ ДҮРЭМ: хариуг хэзээ ч шууд бүү хэл, засварласан код бүү бич, код блок бүү ашигла.
+ХАТУУ ДҮРЭМ: хариуг хэзээ ч шууд бүү хэл, зөв нэр эсвэл засварласан код бүү бич, код блок бүү ашигла.
 Сурагч өөрөө олох ёстой. Зөвхөн JSON буцаа: {"title": "...", "explanation": "...", "hints": ["...", "...", "..."]}`;
 
 const sentence = z.string().trim().min(5).max(400);
@@ -34,21 +34,32 @@ const completionSchema = z.object({
 const looksLikeCode = (text: string) =>
   /```|\n\s{2,}\S|;\s*$|=>|\bdef\s+\w+\(|\bprint\(/m.test(text);
 
-/** Pulls the first JSON object out of a reply that may wrap it in prose or fences. */
-const extractJson = (content: string) => {
+/**
+ * Pulls the JSON object out of a reply that may wrap it in prose or fences.
+ * Gemma 4 first writes its reasoning in <thought>…</thought>, which can quote
+ * the JSON template too, so that part is dropped.
+ */
+const extractJson = (reply: string) => {
+  const content = reply.replace(/<thought>[\s\S]*?<\/thought>/g, "");
   const start = content.indexOf("{");
   const end = content.lastIndexOf("}");
   return start === -1 || end <= start ? null : content.slice(start, end + 1);
 };
 
-export const parseGemmaReply = (content: string): Explanation | null => {
+/** The compiler's own suggestion ("Did you mean 'total'?") is the answer. */
+const suggestedFix = (message: string) => /did you mean ['"`]([^'"`]+)['"`]/i.exec(message)?.[1];
+
+export const parseGemmaReply = (content: string, message = ""): Explanation | null => {
   const json = extractJson(content);
   if (!json) return null;
   try {
     const result = explanationSchema.safeParse(JSON.parse(json));
     if (!result.success) return null;
     const { title, explanation, hints } = result.data;
-    if ([title, explanation, ...hints].some(looksLikeCode)) return null;
+    const texts = [title, explanation, ...hints];
+    if (texts.some(looksLikeCode)) return null;
+    const fix = suggestedFix(message);
+    if (fix && texts.some((text) => text.includes(fix))) return null;
     return { title, explanation, hints };
   } catch {
     return null;
@@ -91,14 +102,21 @@ export const askGemma = async (
         signal: deadline,
       });
       if (response.status === 400) continue;
-      if (!response.ok) return null;
+      if (!response.ok) {
+        console.warn(`classradar: Gemma replied HTTP ${response.status}`);
+        return null;
+      }
       const completion = completionSchema.safeParse(await response.json());
       return completion.success
-        ? parseGemmaReply(completion.data.choices[0]?.message.content ?? "")
+        ? parseGemmaReply(completion.data.choices[0]?.message.content ?? "", message)
         : null;
     }
     return null;
-  } catch {
+  } catch (error) {
+    console.warn(
+      "classradar: Gemma request failed:",
+      error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : error,
+    );
     return null;
   }
 };

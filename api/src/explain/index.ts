@@ -24,23 +24,27 @@ const fromFallback = (message: string): ErrorExplanation => {
   return { title, explanation, hints, source: "fallback", model: null };
 };
 
+const fromCache = async (subdomain: string, normalizedKey: string, message: string) => {
+  const cached = await ClassradarExplanations.findOne({ subdomain, normalizedKey }).lean();
+  if (!cached || cached.hints.length !== 3) return null;
+  const [a = "", b = "", c = ""] = cached.hints;
+  return {
+    // Entries cached before titles existed borrow the built-in one.
+    title: cached.title || fallbackExplanation(message).title,
+    explanation: cached.explanation,
+    hints: [a, b, c],
+    source: "gemma",
+    model: cached.model,
+  } satisfies ErrorExplanation;
+};
+
 const generate = async (
   subdomain: string,
   normalizedKey: string,
   message: string,
 ): Promise<ErrorExplanation> => {
-  const cached = await ClassradarExplanations.findOne({ subdomain, normalizedKey }).lean();
-  if (cached && cached.hints.length === 3) {
-    const [a = "", b = "", c = ""] = cached.hints;
-    return {
-      // Entries cached before titles existed borrow the built-in one.
-      title: cached.title || fallbackExplanation(message).title,
-      explanation: cached.explanation,
-      hints: [a, b, c],
-      source: "gemma",
-      model: cached.model,
-    };
-  }
+  const cached = await fromCache(subdomain, normalizedKey, message);
+  if (cached) return cached;
   if (!gemmaConfig) return fromFallback(message);
 
   const answer = await askGemma(gemmaConfig, message);
@@ -59,6 +63,7 @@ const generate = async (
   return { ...answer, source: "gemma", model: gemmaConfig.model };
 };
 
+/** Waits for Gemma (deduped per error kind); used to warm the cache. */
 export const explainError = (subdomain: string, normalizedKey: string, message: string) => {
   const key = `${subdomain}\u0000${normalizedKey}`;
   const pending = inFlight.get(key);
@@ -66,4 +71,20 @@ export const explainError = (subdomain: string, normalizedKey: string, message: 
   const promise = generate(subdomain, normalizedKey, message).finally(() => inFlight.delete(key));
   inFlight.set(key, promise);
   return promise;
+};
+
+/**
+ * Never waits for Gemma: the cached Gemma answer if there is one, else the
+ * built-in explanation right away while Gemma is asked in the background, so
+ * the next look at this kind of error gets Gemma's answer.
+ */
+export const explainNow = async (subdomain: string, normalizedKey: string, message: string) => {
+  const cached = await fromCache(subdomain, normalizedKey, message);
+  if (cached) return cached;
+  if (gemmaConfig) {
+    void explainError(subdomain, normalizedKey, message).catch((error: unknown) =>
+      console.error("classradar: background explanation failed", error),
+    );
+  }
+  return fromFallback(message);
 };

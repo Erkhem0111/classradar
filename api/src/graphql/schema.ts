@@ -6,7 +6,7 @@ import { isValidObjectId } from "mongoose";
 import { manifest } from "../config.ts";
 import type { Context } from "../context.ts";
 import { personalize, tokensAround } from "../explain/fallback.ts";
-import { explainError } from "../explain/index.ts";
+import { explainError, explainNow } from "../explain/index.ts";
 import { ClassradarStudents } from "../models/students.ts";
 import {
   ClassradarErrors,
@@ -210,7 +210,7 @@ const toHelp = async (
 ) => {
   if (!error) throw new GraphQLError("Error not found", { extensions: { code: "NOT_FOUND" } });
   const help = personalize(
-    await explainError(subdomain, error.normalizedKey, error.message),
+    await explainNow(subdomain, error.normalizedKey, error.message),
     error.message,
     tokensAround(error.snippet, error.line, error.column),
   );
@@ -291,7 +291,7 @@ export const resolvers: GraphQLResolverMap<Context> = {
                 : "error";
           const error = errorMinutes === null ? undefined : latestByEmail.get(student.email);
           const title = error
-            ? (await explainError(subdomain, error.normalizedKey, error.message)).title
+            ? (await explainNow(subdomain, error.normalizedKey, error.message)).title
             : null;
           return {
             seat: student.seat,
@@ -341,7 +341,7 @@ export const resolvers: GraphQLResolverMap<Context> = {
         Promise.all(
           rows.map(async (row) => ({
             ...row,
-            title: (await explainError(context.subdomain, row.normalizedKey, row.sampleMessage))
+            title: (await explainNow(context.subdomain, row.normalizedKey, row.sampleMessage))
               .title,
           })),
         ),

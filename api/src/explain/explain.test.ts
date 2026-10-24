@@ -123,3 +123,16 @@ test("askGemma retries with the prompt inline when the API rejects system/JSON m
     server.close();
   }
 });
+
+test("drops Gemma 4's <thought> block and rejects replies that leak the fix", () => {
+  const thought = `<thought>Format: {"title": "...", "explanation": "...", "hints": ["..."]}</thought>\n`;
+  assert.deepEqual(parseGemmaReply(thought + JSON.stringify(good)), good);
+  const leaky = {
+    ...good,
+    hints: [good.hints[0], "Магадгүй чи total гэж бичих гэсэн үү?", good.hints[2]],
+  };
+  assert.equal(
+    parseGemmaReply(JSON.stringify(leaky), "Cannot find name 'totl'. Did you mean 'total'?"),
+    null,
+  );
+});
