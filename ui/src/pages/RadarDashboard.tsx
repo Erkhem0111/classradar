@@ -4,9 +4,10 @@ import type { ClassradarDashboardQuery } from "~/gql/graphql";
 import { CLASS_RADAR_QUERY } from "../graphql";
 
 // Visuals follow the "Багш · Ангийн радар" design: a dark violet room, the
-// seat map tilted like a classroom floor, a live summary on the right. Its
-// exact colors, gradients and 3D transforms are inline styles; layout uses
-// the prefixed Tailwind utilities.
+// seat map tilted like a classroom floor. The right column answers "who needs
+// me now": students sorted by how long they have been stuck, and the picked
+// seat's details. Exact colors, gradients and 3D transforms are inline
+// styles; layout uses the prefixed Tailwind utilities.
 
 type Seat = ClassradarDashboardQuery["classradarSeats"][number];
 type Status = Seat["status"];
@@ -119,15 +120,15 @@ const buildRows = (seats: Seat[]) => {
   return rows;
 };
 
-const Dots = ({ used }: { used: number }) => (
-  <span className="classradar:flex classradar:gap-1">
+const Dots = ({ used, size = 10 }: { used: number; size?: number }) => (
+  <span className="classradar:flex classradar:gap-1" aria-label={`${used}/3 сэжүүр`}>
     {[0, 1, 2].map((i) => (
       <span
         key={i}
         style={{
-          width: 10,
-          height: 10,
-          borderRadius: 5,
+          width: size,
+          height: size,
+          borderRadius: size / 2,
           boxSizing: "border-box",
           background: i < used ? "#9B84EE" : "transparent",
           border: i < used ? 0 : "1px solid #6E6888",
@@ -137,110 +138,18 @@ const Dots = ({ used }: { used: number }) => (
   </span>
 );
 
-const SeatPopover = ({ seat, onClose }: { seat: Seat; onClose: () => void }) => {
-  const look = STATUS[seat.status];
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: "50%",
-        bottom: "100%",
-        width: 0,
-        height: 0,
-        transformStyle: "preserve-3d",
-        zIndex: 10,
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: -132,
-          bottom: 0,
-          width: 264,
-          transformOrigin: "50% 100%",
-          transform: "rotateX(-24deg)",
-        }}
-      >
-        <div
-          className="classradar-beam"
-          style={{
-            position: "absolute",
-            left: 131,
-            bottom: 0,
-            width: 2,
-            height: 22,
-            background: `linear-gradient(0deg, ${look.fg}, rgba(255,255,255,0))`,
-          }}
-        />
-        <div
-          className="classradar-rise"
-          style={{
-            marginBottom: 22,
-            borderRadius: 16,
-            padding: "16px 16px 14px",
-            background: "linear-gradient(170deg, rgba(42,26,86,0.97), rgba(18,10,38,0.97))",
-            border: `1px solid ${look.fg}`,
-            boxShadow: `0 18px 40px -12px rgba(0,0,0,0.8), 0 0 30px -6px ${look.glow}, inset 0 1px 0 rgba(255,255,255,0.10)`,
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-            textAlign: "left",
-          }}
-        >
-          <div className="classradar:flex classradar:items-center classradar:justify-between classradar:gap-2">
-            <span
-              style={{
-                fontFamily: MONO,
-                fontSize: 12,
-                padding: "4px 8px",
-                borderRadius: 6,
-                background: "rgba(255,255,255,0.08)",
-              }}
-            >
-              {seat.seat ?? "—"}
-            </span>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Хаах"
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                border: "1px solid rgba(255,255,255,0.14)",
-                background: "transparent",
-                color: "#C7C1DA",
-                cursor: "pointer",
-              }}
-            >
-              ×
-            </button>
-          </div>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>{seat.name ?? seat.studentEmail}</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: look.fg }}>{statusText(seat)}</div>
-          <div style={{ fontSize: 13, color: "#E3DEF2" }}>{errorText(seat)}</div>
-          {seat.errorMessage && (
-            <div style={{ fontFamily: MONO, fontSize: 11, color: "#A9A3BF" }}>
-              {seat.errorMessage}
-            </div>
-          )}
-          <div
-            className="classradar:flex classradar:items-center classradar:justify-between"
-            style={{
-              fontSize: 12,
-              color: "#C7C1DA",
-              paddingTop: 10,
-              borderTop: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            <span>{seat.understood ? "✓ Ойлгосон · сэжүүр" : "Ашигласан сэжүүр"}</span>
-            <Dots used={seat.hintsUsed} />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+const firstName = (seat: Seat) =>
+  (seat.name ?? seat.studentEmail.split("@")[0] ?? "").split(" ")[0];
+
+/** Who needs the teacher first: stuck longest, then fresh errors. */
+const needsAttention = (seats: Seat[]) =>
+  seats
+    .filter((seat) => seat.status === "stuck" || seat.status === "error")
+    .sort(
+      (a, b) =>
+        Number(b.status === "stuck") - Number(a.status === "stuck") ||
+        (b.errorMinutes ?? 0) - (a.errorMinutes ?? 0),
+    );
 
 const SeatButton = ({
   seat,
@@ -252,58 +161,85 @@ const SeatButton = ({
   onPick: () => void;
 }) => {
   const look = STATUS[seat.status];
+  const footer =
+    seat.status === "stuck" ? (
+      <span style={{ fontSize: 11, fontWeight: 800, color: look.fg }}>
+        ■ {seat.errorMinutes} мин
+      </span>
+    ) : seat.status === "error" ? (
+      <Dots used={seat.hintsUsed} size={7} />
+    ) : (
+      <span style={{ fontSize: 11, fontWeight: 700, color: look.fg }}>{look.short}</span>
+    );
   return (
     <button
       type="button"
       onClick={onPick}
       aria-label={`Суудал ${seat.seat ?? ""}, ${seat.name ?? seat.studentEmail}, ${statusText(seat)}`}
       aria-pressed={selected}
-      title={seat.name ?? seat.studentEmail}
+      className={seat.status === "stuck" ? "classradar-alarm" : undefined}
       style={{
         width: "100%",
         boxSizing: "border-box",
         fontFamily: "inherit",
         textAlign: "left",
-        color: "#F1EEFA",
+        color: seat.status === "absent" ? "#8C86A6" : "#F1EEFA",
         borderRadius: 12,
-        padding: "10px 12px 12px",
-        minHeight: 66,
+        padding: "8px 10px 9px",
+        minHeight: 64,
         background: look.face,
         border: selected ? "2px solid #FFFFFF" : look.border,
-        boxShadow: selected ? `${look.shadow}, 0 0 0 4px rgba(255,255,255,0.10)` : look.shadow,
+        boxShadow: selected ? `${look.shadow}, 0 0 0 4px rgba(255,255,255,0.12)` : look.shadow,
         display: "flex",
         flexDirection: "column",
-        gap: 6,
+        justifyContent: "space-between",
+        gap: 4,
         cursor: "pointer",
+        transform: selected ? "translateZ(14px)" : undefined,
+        transition: "transform 0.2s ease, box-shadow 0.2s ease",
       }}
     >
-      <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 500 }}>{seat.seat ?? "—"}</span>
-      <span style={{ fontSize: 11, fontWeight: 700, color: look.fg }}>{look.short}</span>
+      <span className="classradar:flex classradar:items-center classradar:justify-between classradar:gap-1">
+        <span style={{ fontFamily: MONO, fontSize: 11, opacity: 0.75 }}>{seat.seat ?? "—"}</span>
+        {seat.understood && (
+          <span style={{ fontSize: 11, color: "#3FE0B0" }} title="Ойлгосон">
+            ✓
+          </span>
+        )}
+      </span>
+      <span
+        className="classradar:truncate"
+        style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.1 }}
+      >
+        {firstName(seat)}
+      </span>
+      {footer}
     </button>
   );
 };
 
-const SeatMap = ({ seats }: { seats: Seat[] }) => {
-  const [selected, setSelected] = useState<string | null>(null);
+const SeatMap = ({
+  seats,
+  selected,
+  onPick,
+}: {
+  seats: Seat[];
+  selected: string | null;
+  onPick: (id: string | null) => void;
+}) => {
   const rows = buildRows(seats);
   return (
     <section
       aria-label="Ангийн суудлын зураг"
-      style={{
-        perspective: 1500,
-        perspectiveOrigin: "50% 0%",
-        paddingTop: 170,
-        maxWidth: 860,
-        margin: "0 auto",
-      }}
+      style={{ perspective: 1400, perspectiveOrigin: "50% 0%", maxWidth: 860, margin: "0 auto" }}
     >
       <div
         style={{
-          transform: "rotateX(24deg)",
+          transform: "rotateX(12deg)",
           transformOrigin: "50% 0%",
           transformStyle: "preserve-3d",
           borderRadius: 22,
-          padding: "26px 28px 36px",
+          padding: "22px 24px 28px",
           backgroundColor: "#120A26",
           backgroundImage:
             "repeating-linear-gradient(0deg, rgba(155,132,238,0.07) 0 1px, transparent 1px 48px), repeating-linear-gradient(90deg, rgba(155,132,238,0.07) 0 1px, transparent 1px 48px)",
@@ -311,30 +247,34 @@ const SeatMap = ({ seats }: { seats: Seat[] }) => {
             "0 50px 70px -30px rgba(124,77,255,0.5), inset 0 0 0 1px rgba(155,132,238,0.20)",
           display: "flex",
           flexDirection: "column",
-          gap: 26,
+          gap: 22,
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        <div className="classradar:flex classradar:flex-col classradar:items-center classradar:gap-2.5">
+        <div aria-hidden className="classradar-sweep" />
+        <div className="classradar:flex classradar:flex-col classradar:items-center classradar:gap-2">
           <div
             style={{
-              width: "64%",
-              height: 12,
-              borderRadius: 6,
+              width: "60%",
+              height: 10,
+              borderRadius: 5,
               background:
                 "linear-gradient(90deg, rgba(138,99,255,0.2), #8A63FF, rgba(138,99,255,0.2))",
               boxShadow: "0 0 28px rgba(138,99,255,0.8)",
             }}
           />
-          <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.14em", color: "#A9A3BF" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", color: "#A9A3BF" }}>
             САМБАР
           </div>
         </div>
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-            gap: "18px 14px",
+            gridTemplateColumns: "repeat(3, minmax(0, 1fr)) 28px repeat(3, minmax(0, 1fr))",
+            gap: "14px 12px",
             transformStyle: "preserve-3d",
+            position: "relative",
           }}
         >
           {rows.flatMap((row, r) => {
@@ -346,16 +286,13 @@ const SeatMap = ({ seats }: { seats: Seat[] }) => {
                 return <div key={key} aria-hidden />;
               }
               const id = seat.studentEmail;
-              const isSelected = selected === id;
               return (
-                <div key={key} style={{ position: "relative", transformStyle: "preserve-3d" }}>
-                  <SeatButton
-                    seat={seat}
-                    selected={isSelected}
-                    onPick={() => setSelected(isSelected ? null : id)}
-                  />
-                  {isSelected && <SeatPopover seat={seat} onClose={() => setSelected(null)} />}
-                </div>
+                <SeatButton
+                  key={key}
+                  seat={seat}
+                  selected={selected === id}
+                  onPick={() => onPick(selected === id ? null : id)}
+                />
               );
             });
           })}
@@ -365,25 +302,110 @@ const SeatMap = ({ seats }: { seats: Seat[] }) => {
   );
 };
 
-const SummaryRow = ({ status, label, count }: { status: Status; label: string; count: number }) => {
+const StatTile = ({ status, label, count }: { status: Status; label: string; count: number }) => {
   const look = STATUS[status];
   return (
     <div
-      className="classradar:flex classradar:items-center classradar:justify-between"
+      className={status === "stuck" && count > 0 ? "classradar-alarm" : undefined}
       style={{
+        flex: "1 1 150px",
         borderRadius: 16,
-        padding: "16px 20px",
+        padding: "14px 18px",
         background: look.glow.replace(/[\d.]+\)$/, "0.08)"),
         border: `1px solid ${look.glow.replace(/[\d.]+\)$/, "0.32)")}`,
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        gap: 12,
       }}
     >
-      <span style={{ fontSize: 14, color: "#E3DEF2" }}>{label}</span>
-      <span style={{ fontFamily: DISPLAY, fontSize: 24, color: look.fg }}>{count}</span>
+      <span style={{ fontSize: 13, color: "#E3DEF2" }}>{label}</span>
+      <span style={{ fontFamily: DISPLAY, fontSize: 28, fontWeight: 700, color: look.fg }}>
+        {count}
+      </span>
     </div>
   );
 };
 
-/** Centered page column shared by the header row and the main area. */
+const panel: CSSProperties = {
+  borderRadius: 16,
+  padding: "4px 18px",
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.08)",
+};
+
+const SeatDetail = ({ seat, onClose }: { seat: Seat; onClose: () => void }) => {
+  const look = STATUS[seat.status];
+  return (
+    <div
+      className="classradar-rise"
+      style={{
+        borderRadius: 16,
+        padding: "16px 18px",
+        background: "linear-gradient(170deg, rgba(42,26,86,0.97), rgba(18,10,38,0.97))",
+        border: `1px solid ${look.fg}`,
+        boxShadow: `0 0 30px -8px ${look.glow}`,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+      }}
+    >
+      <div className="classradar:flex classradar:items-center classradar:justify-between classradar:gap-2">
+        <span
+          style={{
+            fontFamily: MONO,
+            fontSize: 12,
+            padding: "3px 8px",
+            borderRadius: 6,
+            background: "rgba(255,255,255,0.08)",
+          }}
+        >
+          {seat.seat ?? "—"}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Хаах"
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 8,
+            border: "1px solid rgba(255,255,255,0.14)",
+            background: "transparent",
+            color: "#C7C1DA",
+            cursor: "pointer",
+          }}
+        >
+          ×
+        </button>
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 700 }}>{seat.name ?? seat.studentEmail}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: look.fg }}>{statusText(seat)}</div>
+      <div style={{ fontSize: 13, color: "#E3DEF2" }}>{errorText(seat)}</div>
+      {seat.errorMessage && (
+        <div style={{ fontFamily: MONO, fontSize: 11, color: "#A9A3BF", wordBreak: "break-word" }}>
+          {seat.errorMessage}
+        </div>
+      )}
+      {seat.status !== "absent" && seat.status !== "working" && (
+        <div
+          className="classradar:flex classradar:items-center classradar:justify-between"
+          style={{
+            fontSize: 12,
+            color: "#C7C1DA",
+            paddingTop: 8,
+            borderTop: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
+          <span>{seat.understood ? "✓ Ойлгосон" : "Ашигласан сэжүүр"}</span>
+          <Dots used={seat.hintsUsed} />
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** Centered page column shared by every row. */
 const column: CSSProperties = {
   width: "100%",
   maxWidth: 1240,
@@ -394,59 +416,53 @@ const column: CSSProperties = {
 
 const panelHeading: CSSProperties = {
   margin: 0,
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 700,
   letterSpacing: "0.08em",
   color: "#A9A3BF",
 };
 
 const Notice = ({ children }: { children: string }) => (
-  <div
-    role="status"
-    style={{
-      borderRadius: 16,
-      padding: "24px",
-      background: "rgba(255,255,255,0.04)",
-      border: "1px solid rgba(255,255,255,0.08)",
-      color: "#C7C1DA",
-      fontSize: 14,
-    }}
-  >
+  <div role="status" style={{ ...panel, padding: 24, color: "#C7C1DA", fontSize: 14 }}>
     {children}
   </div>
 );
 
+
 export const RadarDashboard = () => {
   const [classCode, setClassCode] = useState("10A");
   const [draft, setDraft] = useState("10A");
+  const [selected, setSelected] = useState<string | null>(null);
   const { data, loading, error, refetch } = useQuery(CLASS_RADAR_QUERY, {
     variables: { classCode },
     pollInterval: POLL_MS,
-    notifyOnNetworkStatusChange: false,
   });
 
   const seats = data?.classradarSeats ?? [];
   const topErrors = data?.classradarTopErrors ?? [];
   const count = (status: Status) => seats.filter((seat) => seat.status === status).length;
   const present = seats.length - count("absent");
+  const attention = needsAttention(seats);
+  const selectedSeat = seats.find((seat) => seat.studentEmail === selected);
 
   return (
     <div
       style={{
         minHeight: "100%",
         boxSizing: "border-box",
-        background: "radial-gradient(1100px 600px at 50% 10%, #1E1040 0%, #0B0716 62%)",
+        background: "radial-gradient(1100px 600px at 50% 0%, #1E1040 0%, #0B0716 62%)",
         color: "#F1EEFA",
         display: "flex",
         flexDirection: "column",
-        // Content is centered and capped, so it sits right whether the erxes
-        // sidebar is open or closed.
+        // Centered and capped, so it sits right with the erxes sidebar open or closed.
         alignItems: "center",
+        gap: 20,
+        paddingBottom: 40,
       }}
     >
       <div
         className="classradar:flex classradar:flex-wrap classradar:items-center classradar:justify-between classradar:gap-4"
-        style={{ ...column, paddingTop: 28 }}
+        style={{ ...column, paddingTop: 24 }}
       >
         <div className="classradar:flex classradar:flex-wrap classradar:items-center classradar:gap-4">
           <form
@@ -466,10 +482,10 @@ export const RadarDashboard = () => {
               onChange={(event) => setDraft(event.target.value)}
               onBlur={() => draft.trim() && setClassCode(draft.trim())}
               style={{
-                width: 90,
+                width: 84,
                 fontFamily: DISPLAY,
                 fontSize: 22,
-                fontWeight: 600,
+                fontWeight: 700,
                 color: "#F1EEFA",
                 background: "transparent",
                 border: "1px solid rgba(255,255,255,0.12)",
@@ -519,8 +535,8 @@ export const RadarDashboard = () => {
           </span>
         </div>
         <div
-          className="classradar:flex classradar:flex-wrap classradar:gap-5"
-          style={{ fontSize: 13, color: "#C7C1DA" }}
+          className="classradar:flex classradar:flex-wrap classradar:gap-4"
+          style={{ fontSize: 12, color: "#C7C1DA" }}
         >
           {LEGEND.map(({ status, text, mark }) => (
             <span key={status}>
@@ -530,20 +546,25 @@ export const RadarDashboard = () => {
         </div>
       </div>
 
+      <div className="classradar:flex classradar:flex-wrap classradar:gap-3" style={column}>
+        <StatTile status="working" label="● Ажиллаж байна" count={count("working")} />
+        <StatTile status="error" label="▲ Алдаатай" count={count("error")} />
+        <StatTile status="stuck" label="■ 5+ мин гацсан" count={count("stuck")} />
+        <StatTile status="absent" label="○ Ирээгүй" count={count("absent")} />
+      </div>
+
       <main
-        className="classradar:flex classradar:flex-wrap classradar:items-start classradar:justify-center classradar:gap-8"
-        style={{ ...column, paddingBottom: 40 }}
+        className="classradar:flex classradar:flex-wrap classradar:items-start classradar:justify-center classradar:gap-6"
+        style={column}
       >
-        <div style={{ flex: "999 1 560px", minWidth: 0, maxWidth: 860 }}>
+        <div style={{ flex: "999 1 540px", minWidth: 0, maxWidth: 860 }}>
           {loading && !data ? (
-            <div style={{ paddingTop: 170 }}>
-              <div
-                className="classradar:animate-pulse"
-                style={{ height: 380, borderRadius: 22, background: "rgba(155,132,238,0.08)" }}
-              />
-            </div>
+            <div
+              className="classradar:animate-pulse"
+              style={{ height: 420, borderRadius: 22, background: "rgba(155,132,238,0.08)" }}
+            />
           ) : error && !data ? (
-            <div style={{ paddingTop: 140 }}>
+            <div>
               <Notice>{`Мэдээлэл авч чадсангүй: ${error.message}`}</Notice>
               <button
                 type="button"
@@ -562,47 +583,102 @@ export const RadarDashboard = () => {
               </button>
             </div>
           ) : seats.length === 0 ? (
-            <div style={{ paddingTop: 140 }}>
-              <Notice>
-                {`${classCode} ангид сурагч алга байна. Сурагчид VS Code extension-ээ асаагаад файлаа хадгалмагц энд гарч ирнэ.`}
-              </Notice>
-            </div>
+            <Notice>
+              {`${classCode} ангид сурагч алга байна. Сурагчид VS Code extension-ээ асаагаад файлаа хадгалмагц энд гарч ирнэ.`}
+            </Notice>
           ) : (
-            <SeatMap seats={seats} />
+            <SeatMap seats={seats} selected={selected} onPick={setSelected} />
           )}
         </div>
 
         <aside
-          className="classradar:flex classradar:flex-col classradar:gap-7"
-          style={{ flex: "1 1 280px", maxWidth: 340, minWidth: 0, paddingTop: 140 }}
+          className="classradar:flex classradar:flex-col classradar:gap-5"
+          style={{ flex: "1 1 280px", maxWidth: 360, minWidth: 0 }}
         >
+          {selectedSeat && <SeatDetail seat={selectedSeat} onClose={() => setSelected(null)} />}
+
           <section
-            aria-labelledby="classradar-now"
-            className="classradar:flex classradar:flex-col classradar:gap-3"
+            aria-labelledby="classradar-attention"
+            className="classradar:flex classradar:flex-col classradar:gap-2"
           >
-            <h2 id="classradar-now" style={panelHeading}>
-              АНГИ ОДОО
+            <h2 id="classradar-attention" style={panelHeading}>
+              АНХААРАХ · {attention.length}
             </h2>
-            <SummaryRow status="working" label="● Ажиллаж байна" count={count("working")} />
-            <SummaryRow status="error" label="▲ Алдаатай" count={count("error")} />
-            <SummaryRow status="stuck" label="■ Гацсан" count={count("stuck")} />
+            <div style={panel}>
+              {loading && !data ? (
+                <div className="classradar:animate-pulse" style={{ height: 120 }} />
+              ) : attention.length === 0 ? (
+                <div style={{ padding: "14px 0", fontSize: 13, color: "#3FE0B0" }}>
+                  ● Бүгд ажиллаж байна
+                </div>
+              ) : (
+                attention.slice(0, 6).map((seat, index) => {
+                  const look = STATUS[seat.status];
+                  return (
+                    <button
+                      key={seat.studentEmail}
+                      type="button"
+                      onClick={() => setSelected(seat.studentEmail)}
+                      aria-pressed={selected === seat.studentEmail}
+                      className="classradar:flex classradar:w-full classradar:items-center classradar:gap-3"
+                      style={{
+                        padding: "11px 0",
+                        background: "transparent",
+                        border: 0,
+                        borderBottom:
+                          index < Math.min(attention.length, 6) - 1
+                            ? "1px solid rgba(255,255,255,0.06)"
+                            : 0,
+                        color: "inherit",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: MONO,
+                          fontSize: 11,
+                          padding: "3px 6px",
+                          borderRadius: 6,
+                          color: look.fg,
+                          border: `1px solid ${look.fg}`,
+                          minWidth: 30,
+                          textAlign: "center",
+                        }}
+                      >
+                        {seat.seat ?? "—"}
+                      </span>
+                      <span className="classradar:flex classradar:min-w-0 classradar:flex-1 classradar:flex-col">
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>{firstName(seat)}</span>
+                        <span
+                          className="classradar:truncate"
+                          style={{ fontSize: 12, color: "#A9A3BF" }}
+                        >
+                          {seat.errorTitle ?? "—"}
+                        </span>
+                      </span>
+                      <span className="classradar:flex classradar:flex-col classradar:items-end classradar:gap-1">
+                        <span style={{ fontSize: 12, fontWeight: 800, color: look.fg }}>
+                          {seat.status === "stuck" ? `${seat.errorMinutes} мин` : "шинэ"}
+                        </span>
+                        <Dots used={seat.hintsUsed} size={7} />
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </section>
 
           <section
             aria-labelledby="classradar-top"
-            className="classradar:flex classradar:flex-col classradar:gap-3"
+            className="classradar:flex classradar:flex-col classradar:gap-2"
           >
             <h2 id="classradar-top" style={panelHeading}>
-              ДАВТАГДСАН АЛДАА
+              ДАВТАГДСАН АЛДАА · ӨНӨӨДӨР
             </h2>
-            <div
-              style={{
-                borderRadius: 16,
-                padding: "4px 20px",
-                background: "rgba(255,255,255,0.04)",
-                border: "1px solid rgba(255,255,255,0.08)",
-              }}
-            >
+            <div style={panel}>
               {loading && !data ? (
                 <div className="classradar:animate-pulse" style={{ height: 150 }} />
               ) : topErrors.length === 0 ? (
@@ -610,18 +686,38 @@ export const RadarDashboard = () => {
                   Өнөөдөр давтагдсан алдаа алга.
                 </div>
               ) : (
-                topErrors.map((item, index) => (
-                  <div
-                    key={item.normalizedKey}
-                    className="classradar:flex classradar:items-center classradar:justify-between classradar:gap-3"
-                    style={{
-                      padding: "14px 0",
-                      borderBottom:
-                        index < topErrors.length - 1 ? "1px solid rgba(255,255,255,0.06)" : 0,
-                    }}
-                  >
-                    <div className="classradar:flex classradar:min-w-0 classradar:flex-col classradar:gap-1">
-                      <span style={{ fontSize: 14, fontWeight: 600 }}>{item.title}</span>
+                topErrors.map((item, index) => {
+                  const share = item.count / Math.max(...topErrors.map((t) => t.count));
+                  return (
+                    <div
+                      key={item.normalizedKey}
+                      className="classradar:flex classradar:flex-col classradar:gap-1.5"
+                      style={{
+                        padding: "12px 0",
+                        borderBottom:
+                          index < topErrors.length - 1 ? "1px solid rgba(255,255,255,0.06)" : 0,
+                      }}
+                    >
+                      <div className="classradar:flex classradar:items-center classradar:justify-between classradar:gap-3">
+                        <span style={{ fontSize: 14, fontWeight: 600 }}>{item.title}</span>
+                        <span style={{ fontFamily: DISPLAY, fontSize: 18, color: "#B9A2FF" }}>
+                          {item.count}
+                        </span>
+                      </div>
+                      <div
+                        aria-hidden
+                        style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)" }}
+                      >
+                        <div
+                          style={{
+                            width: `${Math.round(share * 100)}%`,
+                            height: "100%",
+                            borderRadius: 2,
+                            background: "linear-gradient(90deg, #5629B6, #B9A2FF)",
+                            transition: "width 0.4s ease",
+                          }}
+                        />
+                      </div>
                       <span
                         className="classradar:truncate"
                         title={item.sampleMessage}
@@ -630,11 +726,8 @@ export const RadarDashboard = () => {
                         {item.sampleMessage}
                       </span>
                     </div>
-                    <span style={{ fontFamily: DISPLAY, fontSize: 18, color: "#B9A2FF" }}>
-                      {item.count}
-                    </span>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </section>

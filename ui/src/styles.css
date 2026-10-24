@@ -116,3 +116,39 @@
     animation: none;
   }
 }
+
+/* Stuck seats and tiles pulse a red glow; a faint radar beam sweeps the room. */
+@keyframes classradar-alarm {
+  0%,
+  100% {
+    filter: none;
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(255, 122, 122, 0.75));
+  }
+}
+@keyframes classradar-sweep {
+  0% {
+    transform: translateX(-60%);
+  }
+  100% {
+    transform: translateX(160%);
+  }
+}
+.classradar-alarm {
+  animation: classradar-alarm 1.6s ease-in-out infinite;
+}
+.classradar-sweep {
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(138, 99, 255, 0.1), transparent);
+  animation: classradar-sweep 4.5s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .classradar-alarm,
+  .classradar-sweep {
+    animation: none;
+  }
+}
