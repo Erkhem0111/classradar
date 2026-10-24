@@ -69,3 +69,50 @@
     0 0 0 1px var(--border-shadow), 0 1px 1px var(--shadow), 0 2px 2px var(--shadow),
     0 4px 4px var(--shadow), 0 8px 8px var(--shadow);
 }
+
+/* Radar dashboard motion (from the design); plain names keep the plugin prefix. */
+@keyframes classradar-ping {
+  0% {
+    transform: scale(0.7);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+@keyframes classradar-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.86);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes classradar-beam {
+  0% {
+    transform: scaleY(0);
+  }
+  100% {
+    transform: scaleY(1);
+  }
+}
+.classradar-ping {
+  animation: classradar-ping 1.8s ease-out infinite;
+}
+.classradar-rise {
+  animation: classradar-rise 0.42s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
+}
+.classradar-beam {
+  transform-origin: 50% 100%;
+  animation: classradar-beam 0.25s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .classradar-ping,
+  .classradar-rise,
+  .classradar-beam {
+    animation: none;
+  }
+}

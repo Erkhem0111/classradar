@@ -1,5 +1,5 @@
 import "./styles.css";
-import { IconSandbox } from "@tabler/icons-react";
+import { IconRadar } from "@tabler/icons-react";
 import type { IUIConfig } from "erxes-ui";
 import manifest from "../../erxes.json" with { type: "json" };
 
@@ -14,11 +14,11 @@ export const CONFIG: IUIConfig = {
   path,
   // Advisory compatibility range read by current core-ui hosts.
   platform: "3.3.2",
-  icon: IconSandbox,
+  icon: IconRadar,
   navigationGroup: {
     name: manifest.title,
-    icon: IconSandbox,
+    icon: IconRadar,
     defaultPath: path,
   },
-  modules: [{ name, icon: IconSandbox, path }],
+  modules: [{ name, icon: IconRadar, path }],
 };

@@ -219,7 +219,10 @@ export const activate = (context: vscode.ExtensionContext) => {
       const position = new vscode.Position(line, character);
       editor.selection = new vscode.Selection(position, position);
     }
-    await vscode.commands.executeCommand("editor.action.showHover");
+    // showHover only focuses a hover that is already open instead of
+    // re-rendering it, so close it first to make the card update in place.
+    await vscode.commands.executeCommand("editor.action.hideHover");
+    await vscode.commands.executeCommand("editor.action.showHover", { focus: "noAutoFocus" });
   };
 
   const hoverProvider: vscode.HoverProvider = {

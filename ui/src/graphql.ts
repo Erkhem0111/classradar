@@ -14,3 +14,27 @@ export const STATUS_QUERY = gql(`
     }
   }
 `);
+
+export const CLASS_RADAR_QUERY = gql(`
+  query classradarDashboard($classCode: String!) {
+    classradarSeats(classCode: $classCode) {
+      seat
+      studentEmail
+      name
+      status
+      errorMinutes
+      errorTitle
+      errorMessage
+      errorFile
+      errorLine
+      hintsUsed
+      understood
+    }
+    classradarTopErrors(classCode: $classCode) {
+      normalizedKey
+      title
+      count
+      sampleMessage
+    }
+  }
+`);
