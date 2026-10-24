@@ -1,19 +1,21 @@
 import { useQuery } from "@apollo/client";
-import { useEffect, useState, type CSSProperties } from "react";
+import { IconAlertTriangle, IconRadar, IconRefresh, IconX } from "@tabler/icons-react";
+// Root imports on purpose: core-ui shares `erxes-ui` as a Module Federation
+// singleton keyed on the bare specifier.
+import { Badge, Button, Card, Empty, Input, Label, ScrollArea, Tooltip, cn } from "erxes-ui";
+import { useEffect, useState } from "react";
 import type { ClassradarDashboardQuery } from "~/gql/graphql";
 import { CLASS_RADAR_QUERY } from "../graphql";
 import { RadarLoading } from "./RadarLoading";
 
-// Visuals follow the "Багш · Ангийн радар" design: a dark violet room, the
-// seat map tilted like a classroom floor. The right column answers "who needs
-// me now": students sorted by how long they have been stuck, and the picked
-// seat's details. Exact colors, gradients and 3D transforms are inline
-// styles; layout uses the prefixed Tailwind utilities.
+// The teacher's live classroom, built from erxes-ui components and the host's
+// theme tokens so it matches the rest of erxes in light and dark mode. Layout
+// follows the "Багш · Ангийн радар" design: seat map on the left, "who needs
+// me now" and the most repeated errors on the right.
 
 type Seat = ClassradarDashboardQuery["classradarSeats"][number];
 type Status = Seat["status"];
 
-const ACCENT = "#5629B6";
 const POLL_MS = 5000;
 const SEATS_PER_ROW = 6;
 // The loading radar stays at least this long so it reads as a moment, not a flash.
@@ -22,73 +24,55 @@ const MIN_LOADING_MS = 1200;
 const STATUS: Record<
   Status,
   {
-    short: string;
     label: string;
-    fg: string;
-    glow: string;
-    face: string;
-    border: string;
-    shadow: string;
+    short: string;
+    badge: "success" | "warning" | "destructive" | "secondary";
+    seat: string;
+    text: string;
   }
 > = {
   working: {
-    short: "● OK",
-    label: "● Ажиллаж байна",
-    fg: "#3FE0B0",
-    glow: "rgba(63,224,176,0.6)",
-    face: "linear-gradient(180deg, rgba(63,224,176,0.20), rgba(63,224,176,0.06))",
-    border: "1px solid rgba(63,224,176,0.45)",
-    shadow:
-      "0 7px 0 #0D2A22, 0 14px 24px -8px rgba(63,224,176,0.35), inset 0 1px 0 rgba(255,255,255,0.10)",
+    label: "Ажиллаж байна",
+    short: "OK",
+    badge: "success",
+    seat: "classradar:border-success/50 classradar:bg-success/10",
+    text: "classradar:text-success",
   },
   error: {
-    short: "▲ Алдаа",
-    label: "▲ Алдаатай",
-    fg: "#FFB547",
-    glow: "rgba(255,181,71,0.6)",
-    face: "linear-gradient(180deg, rgba(255,181,71,0.22), rgba(255,181,71,0.06))",
-    border: "1px solid rgba(255,181,71,0.50)",
-    shadow:
-      "0 7px 0 #33230A, 0 14px 24px -8px rgba(255,181,71,0.35), inset 0 1px 0 rgba(255,255,255,0.10)",
+    label: "Алдаатай",
+    short: "Алдаа",
+    badge: "warning",
+    seat: "classradar:border-warning/60 classradar:bg-warning/15",
+    text: "classradar:text-warning",
   },
   stuck: {
-    short: "■ Гацсан",
-    label: "■ Гацсан",
-    fg: "#FF8A8A",
-    glow: "rgba(255,122,122,0.7)",
-    face: "linear-gradient(180deg, rgba(255,122,122,0.28), rgba(255,122,122,0.08))",
-    border: "1px solid rgba(255,122,122,0.65)",
-    shadow:
-      "0 7px 0 #3A1414, 0 16px 30px -8px rgba(255,122,122,0.55), inset 0 1px 0 rgba(255,255,255,0.12)",
+    label: "5+ мин гацсан",
+    short: "Гацсан",
+    badge: "destructive",
+    seat: "classradar:border-destructive/70 classradar:bg-destructive/15 classradar-alarm",
+    text: "classradar:text-destructive",
   },
   absent: {
-    short: "○ Ирээгүй",
-    label: "○ Ирээгүй",
-    fg: "#8C86A6",
-    glow: "rgba(140,134,166,0.4)",
-    face: "rgba(255,255,255,0.03)",
-    border: "1px dashed rgba(255,255,255,0.16)",
-    shadow: "none",
+    label: "Ирээгүй",
+    short: "Ирээгүй",
+    badge: "secondary",
+    seat: "classradar:border-dashed classradar:border-border classradar:bg-transparent",
+    text: "classradar:text-muted-foreground",
   },
 };
 
-const LEGEND: { status: Status; text: string; mark: string }[] = [
-  { status: "working", text: "Ажиллаж байна", mark: "●" },
-  { status: "error", text: "Алдаатай", mark: "▲" },
-  { status: "stuck", text: "5+ мин гацсан", mark: "■" },
-  { status: "absent", text: "Ирээгүй", mark: "○" },
-];
-
-const MONO = "'JetBrains Mono', ui-monospace, monospace";
-const DISPLAY = "'Unbounded', var(--font-sans), sans-serif";
+const STATUSES: Status[] = ["working", "error", "stuck", "absent"];
 
 const seatNumber = (seat: string | null) => {
   const number = Number(seat?.replace(/\D/g, ""));
   return seat && Number.isInteger(number) && number > 0 ? number : null;
 };
 
+const firstName = (seat: Seat) =>
+  (seat.name ?? seat.studentEmail.split("@")[0] ?? "").split(" ")[0];
+
 const statusText = (seat: Seat) =>
-  seat.status === "stuck" ? `■ ${seat.errorMinutes ?? 5} минут гацсан` : STATUS[seat.status].label;
+  seat.status === "stuck" ? `${seat.errorMinutes ?? 5} минут гацсан` : STATUS[seat.status].label;
 
 const errorText = (seat: Seat) => {
   if (seat.status === "absent") return "Холбогдоогүй";
@@ -123,27 +107,6 @@ const buildRows = (seats: Seat[]) => {
   return rows;
 };
 
-const Dots = ({ used, size = 10 }: { used: number; size?: number }) => (
-  <span className="classradar:flex classradar:gap-1" aria-label={`${used}/3 сэжүүр`}>
-    {[0, 1, 2].map((i) => (
-      <span
-        key={i}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          boxSizing: "border-box",
-          background: i < used ? "#9B84EE" : "transparent",
-          border: i < used ? 0 : "1px solid #6E6888",
-        }}
-      />
-    ))}
-  </span>
-);
-
-const firstName = (seat: Seat) =>
-  (seat.name ?? seat.studentEmail.split("@")[0] ?? "").split(" ")[0];
-
 /** Who needs the teacher first: stuck longest, then fresh errors. */
 const needsAttention = (seats: Seat[]) =>
   seats
@@ -153,6 +116,22 @@ const needsAttention = (seats: Seat[]) =>
         Number(b.status === "stuck") - Number(a.status === "stuck") ||
         (b.errorMinutes ?? 0) - (a.errorMinutes ?? 0),
     );
+
+const Dots = ({ used }: { used: number }) => (
+  <span className="classradar:flex classradar:gap-1" aria-label={`${used}/3 сэжүүр`}>
+    {[0, 1, 2].map((i) => (
+      <span
+        key={i}
+        className={cn(
+          "classradar:size-2 classradar:rounded-full classradar:border",
+          i < used
+            ? "classradar:border-primary classradar:bg-primary"
+            : "classradar:border-muted-foreground/50",
+        )}
+      />
+    ))}
+  </span>
+);
 
 const SeatButton = ({
   seat,
@@ -164,61 +143,45 @@ const SeatButton = ({
   onPick: () => void;
 }) => {
   const look = STATUS[seat.status];
-  const footer =
-    seat.status === "stuck" ? (
-      <span style={{ fontSize: 11, fontWeight: 800, color: look.fg }}>
-        ■ {seat.errorMinutes} мин
-      </span>
-    ) : seat.status === "error" ? (
-      <Dots used={seat.hintsUsed} size={7} />
-    ) : (
-      <span style={{ fontSize: 11, fontWeight: 700, color: look.fg }}>{look.short}</span>
-    );
   return (
-    <button
-      type="button"
-      onClick={onPick}
-      aria-label={`Суудал ${seat.seat ?? ""}, ${seat.name ?? seat.studentEmail}, ${statusText(seat)}`}
-      aria-pressed={selected}
-      className={seat.status === "stuck" ? "classradar-alarm" : undefined}
-      style={{
-        width: "100%",
-        boxSizing: "border-box",
-        fontFamily: "inherit",
-        textAlign: "left",
-        color: seat.status === "absent" ? "#8C86A6" : "#F1EEFA",
-        borderRadius: 12,
-        padding: "8px 10px 9px",
-        height: "100%",
-        minHeight: 52,
-        background: look.face,
-        border: selected ? "2px solid #FFFFFF" : look.border,
-        boxShadow: selected ? `${look.shadow}, 0 0 0 4px rgba(255,255,255,0.12)` : look.shadow,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        gap: 4,
-        cursor: "pointer",
-        transform: selected ? "translateZ(14px)" : undefined,
-        transition: "transform 0.2s ease, box-shadow 0.2s ease",
-      }}
-    >
-      <span className="classradar:flex classradar:items-center classradar:justify-between classradar:gap-1">
-        <span style={{ fontFamily: MONO, fontSize: 11, opacity: 0.75 }}>{seat.seat ?? "—"}</span>
-        {seat.understood && (
-          <span style={{ fontSize: 11, color: "#3FE0B0" }} title="Ойлгосон">
-            ✓
+    <Tooltip>
+      <Tooltip.Trigger asChild>
+        <button
+          type="button"
+          onClick={onPick}
+          aria-pressed={selected}
+          aria-label={`Суудал ${seat.seat ?? ""}, ${seat.name ?? seat.studentEmail}, ${statusText(seat)}`}
+          className={cn(
+            "classradar:flex classradar:h-full classradar:min-h-14 classradar:w-full classradar:flex-col classradar:justify-between classradar:gap-1 classradar:rounded-lg classradar:border classradar:px-2.5 classradar:py-2 classradar:text-left classradar:shadow-xs classradar:transition-transform classradar:hover:-translate-y-0.5",
+            look.seat,
+            selected && "classradar:ring-2 classradar:ring-primary classradar:ring-offset-2",
+            seat.status === "absent" && "classradar:text-muted-foreground",
+          )}
+        >
+          <span className="classradar:flex classradar:items-center classradar:justify-between classradar:font-mono classradar:text-xs classradar:text-muted-foreground">
+            {seat.seat ?? "—"}
+            {seat.understood && <span className="classradar:text-success">✓</span>}
           </span>
-        )}
-      </span>
-      <span
-        className="classradar:truncate"
-        style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.1 }}
-      >
-        {firstName(seat)}
-      </span>
-      {footer}
-    </button>
+          <span className="classradar:truncate classradar:text-sm classradar:font-semibold">
+            {firstName(seat)}
+          </span>
+          {seat.status === "stuck" ? (
+            <span className={cn("classradar:text-xs classradar:font-bold", look.text)}>
+              {seat.errorMinutes} мин
+            </span>
+          ) : seat.status === "error" ? (
+            <Dots used={seat.hintsUsed} />
+          ) : (
+            <span className={cn("classradar:text-xs classradar:font-medium", look.text)}>
+              {look.short}
+            </span>
+          )}
+        </button>
+      </Tooltip.Trigger>
+      <Tooltip.Content>
+        {seat.name ?? seat.studentEmail} · {errorText(seat)}
+      </Tooltip.Content>
+    </Tooltip>
   );
 };
 
@@ -233,67 +196,23 @@ const SeatMap = ({
 }) => {
   const rows = buildRows(seats);
   return (
-    <section
-      aria-label="Ангийн суудлын зураг"
-      style={{
-        perspective: 1400,
-        perspectiveOrigin: "50% 0%",
-        maxWidth: 860,
-        width: "100%",
-        margin: "0 auto",
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <div
-        style={{
-          transform: "rotateX(12deg)",
-          transformOrigin: "50% 0%",
-          transformStyle: "preserve-3d",
-          borderRadius: 22,
-          padding: "22px 24px 28px",
-          backgroundColor: "#120A26",
-          backgroundImage:
-            "repeating-linear-gradient(0deg, rgba(155,132,238,0.07) 0 1px, transparent 1px 48px), repeating-linear-gradient(90deg, rgba(155,132,238,0.07) 0 1px, transparent 1px 48px)",
-          boxShadow:
-            "0 50px 70px -30px rgba(124,77,255,0.5), inset 0 0 0 1px rgba(155,132,238,0.20)",
-          display: "flex",
-          flexDirection: "column",
-          gap: 18,
-          position: "relative",
-          overflow: "hidden",
-          flex: 1,
-          minHeight: 0,
-        }}
-      >
-        <div aria-hidden className="classradar-sweep" />
-        <div className="classradar:flex classradar:flex-col classradar:items-center classradar:gap-2">
-          <div
-            style={{
-              width: "60%",
-              height: 10,
-              borderRadius: 5,
-              background:
-                "linear-gradient(90deg, rgba(138,99,255,0.2), #8A63FF, rgba(138,99,255,0.2))",
-              boxShadow: "0 0 28px rgba(138,99,255,0.8)",
-            }}
-          />
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", color: "#A9A3BF" }}>
-            САМБАР
-          </div>
-        </div>
+    <Card className="classradar:flex classradar:h-full classradar:min-h-0 classradar:flex-col">
+      <Card.Header className="classradar:items-center">
         <div
+          aria-hidden
+          className="classradar:h-2 classradar:w-3/5 classradar:rounded-full classradar:bg-primary/70"
+        />
+        <Card.Description className="classradar:tracking-widest">САМБАР</Card.Description>
+      </Card.Header>
+      <Card.Content className="classradar:min-h-0 classradar:flex-1">
+        <div
+          role="group"
+          aria-label="Ангийн суудлын зураг"
+          className="classradar:grid classradar:h-full classradar:gap-3"
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, minmax(0, 1fr)) 28px repeat(3, minmax(0, 1fr))",
+            gridTemplateColumns: "repeat(3, minmax(0, 1fr)) 1.5rem repeat(3, minmax(0, 1fr))",
             // Rows share the height left on screen, so the room always fits.
             gridTemplateRows: `repeat(${rows.length}, minmax(0, 1fr))`,
-            flex: 1,
-            minHeight: 0,
-            gap: "14px 12px",
-            transformStyle: "preserve-3d",
-            position: "relative",
           }}
         >
           {rows.flatMap((row, r) => {
@@ -316,136 +235,155 @@ const SeatMap = ({
             });
           })}
         </div>
-      </div>
-    </section>
+      </Card.Content>
+    </Card>
   );
 };
 
-const StatTile = ({ status, label, count }: { status: Status; label: string; count: number }) => {
-  const look = STATUS[status];
-  return (
-    <div
-      className={status === "stuck" && count > 0 ? "classradar-alarm" : undefined}
-      style={{
-        flex: "1 1 150px",
-        borderRadius: 16,
-        padding: "14px 18px",
-        background: look.glow.replace(/[\d.]+\)$/, "0.08)"),
-        border: `1px solid ${look.glow.replace(/[\d.]+\)$/, "0.32)")}`,
-        display: "flex",
-        alignItems: "baseline",
-        justifyContent: "space-between",
-        gap: 12,
-      }}
-    >
-      <span style={{ fontSize: 13, color: "#E3DEF2" }}>{label}</span>
-      <span style={{ fontFamily: DISPLAY, fontSize: 28, fontWeight: 700, color: look.fg }}>
+const StatTile = ({ status, count }: { status: Status; count: number }) => (
+  <Card
+    className={cn(
+      "classradar:flex-1 classradar:basis-36",
+      status === "stuck" && count > 0 && "classradar-alarm",
+    )}
+  >
+    <Card.Content className="classradar:flex classradar:items-center classradar:justify-between classradar:gap-3 classradar:p-4">
+      <Badge variant={STATUS[status].badge}>{STATUS[status].label}</Badge>
+      <span className={cn("classradar:text-2xl classradar:font-bold", STATUS[status].text)}>
         {count}
       </span>
-    </div>
-  );
-};
+    </Card.Content>
+  </Card>
+);
 
-const panel: CSSProperties = {
-  borderRadius: 16,
-  padding: "4px 18px",
-  background: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(255,255,255,0.08)",
-};
-
-const SeatDetail = ({ seat, onClose }: { seat: Seat; onClose: () => void }) => {
-  const look = STATUS[seat.status];
-  return (
-    <div
-      className="classradar-rise"
-      style={{
-        borderRadius: 16,
-        padding: "16px 18px",
-        background: "linear-gradient(170deg, rgba(42,26,86,0.97), rgba(18,10,38,0.97))",
-        border: `1px solid ${look.fg}`,
-        boxShadow: `0 0 30px -8px ${look.glow}`,
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-      }}
-    >
-      <div className="classradar:flex classradar:items-center classradar:justify-between classradar:gap-2">
-        <span
-          style={{
-            fontFamily: MONO,
-            fontSize: 12,
-            padding: "3px 8px",
-            borderRadius: 6,
-            background: "rgba(255,255,255,0.08)",
-          }}
-        >
-          {seat.seat ?? "—"}
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Хаах"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 8,
-            border: "1px solid rgba(255,255,255,0.14)",
-            background: "transparent",
-            color: "#C7C1DA",
-            cursor: "pointer",
-          }}
-        >
-          ×
-        </button>
+const SeatDetail = ({ seat, onClose }: { seat: Seat; onClose: () => void }) => (
+  <Card className="classradar-rise">
+    <Card.Header className="classradar:flex-row classradar:items-start classradar:justify-between classradar:gap-2">
+      <div className="classradar:flex classradar:flex-col classradar:gap-1">
+        <Card.Description className="classradar:font-mono">{seat.seat ?? "—"}</Card.Description>
+        <Card.Title>{seat.name ?? seat.studentEmail}</Card.Title>
       </div>
-      <div style={{ fontSize: 16, fontWeight: 700 }}>{seat.name ?? seat.studentEmail}</div>
-      <div style={{ fontSize: 13, fontWeight: 700, color: look.fg }}>{statusText(seat)}</div>
-      <div style={{ fontSize: 13, color: "#E3DEF2" }}>{errorText(seat)}</div>
+      <Button variant="ghost" size="icon" onClick={onClose} aria-label="Хаах">
+        <IconX />
+      </Button>
+    </Card.Header>
+    <Card.Content className="classradar:flex classradar:flex-col classradar:gap-2 classradar:text-sm">
+      <div>
+        <Badge variant={STATUS[seat.status].badge}>{statusText(seat)}</Badge>
+      </div>
+      <div>{errorText(seat)}</div>
       {seat.errorMessage && (
-        <div style={{ fontFamily: MONO, fontSize: 11, color: "#A9A3BF", wordBreak: "break-word" }}>
+        <code className="classradar:break-words classradar:rounded classradar:bg-muted classradar:px-2 classradar:py-1 classradar:font-mono classradar:text-xs">
           {seat.errorMessage}
-        </div>
+        </code>
       )}
-      {seat.status !== "absent" && seat.status !== "working" && (
-        <div
-          className="classradar:flex classradar:items-center classradar:justify-between"
-          style={{
-            fontSize: 12,
-            color: "#C7C1DA",
-            paddingTop: 8,
-            borderTop: "1px solid rgba(255,255,255,0.08)",
-          }}
-        >
+      {(seat.status === "error" || seat.status === "stuck") && (
+        <div className="classradar:flex classradar:items-center classradar:justify-between classradar:border-t classradar:border-border classradar:pt-2 classradar:text-muted-foreground">
           <span>{seat.understood ? "✓ Ойлгосон" : "Ашигласан сэжүүр"}</span>
           <Dots used={seat.hintsUsed} />
         </div>
       )}
-    </div>
+    </Card.Content>
+  </Card>
+);
+
+const AttentionList = ({
+  seats,
+  selected,
+  onPick,
+}: {
+  seats: Seat[];
+  selected: string | null;
+  onPick: (id: string) => void;
+}) => (
+  <Card>
+    <Card.Header>
+      <Card.Title className="classradar:text-sm">Анхаарах · {seats.length}</Card.Title>
+      <Card.Description>Хамгийн удаан гацсан нь эхэндээ</Card.Description>
+    </Card.Header>
+    <Card.Content className="classradar:flex classradar:flex-col">
+      {seats.length === 0 ? (
+        <span className="classradar:text-sm classradar:text-success">Бүгд ажиллаж байна</span>
+      ) : (
+        seats.slice(0, 6).map((seat) => (
+          <Button
+            key={seat.studentEmail}
+            variant="ghost"
+            onClick={() => onPick(seat.studentEmail)}
+            aria-pressed={selected === seat.studentEmail}
+            className="classradar:h-auto classradar:justify-start classradar:gap-3 classradar:px-2 classradar:py-2"
+          >
+            <Badge variant={STATUS[seat.status].badge} className="classradar:font-mono">
+              {seat.seat ?? "—"}
+            </Badge>
+            <span className="classradar:flex classradar:min-w-0 classradar:flex-1 classradar:flex-col classradar:items-start">
+              <span className="classradar:font-semibold">{firstName(seat)}</span>
+              <span className="classradar:w-full classradar:truncate classradar:text-left classradar:text-xs classradar:text-muted-foreground">
+                {seat.errorTitle ?? "—"}
+              </span>
+            </span>
+            <span className="classradar:flex classradar:flex-col classradar:items-end classradar:gap-1">
+              <span
+                className={cn("classradar:text-xs classradar:font-bold", STATUS[seat.status].text)}
+              >
+                {seat.status === "stuck" ? `${seat.errorMinutes} мин` : "шинэ"}
+              </span>
+              <Dots used={seat.hintsUsed} />
+            </span>
+          </Button>
+        ))
+      )}
+    </Card.Content>
+  </Card>
+);
+
+const TopErrors = ({ items }: { items: ClassradarDashboardQuery["classradarTopErrors"] }) => {
+  const most = Math.max(1, ...items.map((item) => item.count));
+  return (
+    <Card>
+      <Card.Header>
+        <Card.Title className="classradar:text-sm">Давтагдсан алдаа</Card.Title>
+        <Card.Description>Өнөөдөр ангид хамгийн их гарсан</Card.Description>
+      </Card.Header>
+      <Card.Content className="classradar:flex classradar:flex-col classradar:gap-4">
+        {items.length === 0 ? (
+          <span className="classradar:text-sm classradar:text-muted-foreground">
+            Өнөөдөр давтагдсан алдаа алга.
+          </span>
+        ) : (
+          items.map((item) => (
+            <div
+              key={item.normalizedKey}
+              className="classradar:flex classradar:flex-col classradar:gap-1.5"
+            >
+              <div className="classradar:flex classradar:items-center classradar:justify-between classradar:gap-3">
+                <span className="classradar:text-sm classradar:font-semibold">{item.title}</span>
+                <span className="classradar:text-lg classradar:font-bold classradar:text-primary">
+                  {item.count}
+                </span>
+              </div>
+              <div
+                aria-hidden
+                className="classradar:h-1 classradar:rounded-full classradar:bg-muted"
+              >
+                <div
+                  className="classradar:h-full classradar:rounded-full classradar:bg-primary classradar:transition-all"
+                  style={{ width: `${Math.round((item.count / most) * 100)}%` }}
+                />
+              </div>
+              <span
+                title={item.sampleMessage}
+                className="classradar:truncate classradar:font-mono classradar:text-xs classradar:text-muted-foreground"
+              >
+                {item.sampleMessage}
+              </span>
+            </div>
+          ))
+        )}
+      </Card.Content>
+    </Card>
   );
 };
-
-/** Centered page column shared by every row. */
-const column: CSSProperties = {
-  width: "100%",
-  maxWidth: 1240,
-  boxSizing: "border-box",
-  paddingLeft: "clamp(16px, 3vw, 32px)",
-  paddingRight: "clamp(16px, 3vw, 32px)",
-};
-
-const panelHeading: CSSProperties = {
-  margin: 0,
-  fontSize: 12,
-  fontWeight: 700,
-  letterSpacing: "0.08em",
-  color: "#A9A3BF",
-};
-
-const Notice = ({ children }: { children: string }) => (
-  <div role="status" style={{ ...panel, padding: 24, color: "#C7C1DA", fontSize: 14 }}>
-    {children}
-  </div>
-);
 
 export const RadarDashboard = () => {
   const [classCode, setClassCode] = useState("10A");
@@ -456,341 +394,111 @@ export const RadarDashboard = () => {
     pollInterval: POLL_MS,
   });
 
-  const seats = data?.classradarSeats ?? [];
-  const topErrors = data?.classradarTopErrors ?? [];
-  const count = (status: Status) => seats.filter((seat) => seat.status === status).length;
-  const present = seats.length - count("absent");
-  const attention = needsAttention(seats);
-  const selectedSeat = seats.find((seat) => seat.studentEmail === selected);
-  const teacherEmail = data?.classradarStatus.userEmail;
-
   const [minElapsed, setMinElapsed] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setMinElapsed(true), MIN_LOADING_MS);
     return () => clearTimeout(timer);
   }, []);
 
-  if ((loading && !data) || (!minElapsed && !error)) {
-    return (
-      <div
-        style={{
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          background: "radial-gradient(1200px 600px at 50% 70%, #24124F 0%, #0B0716 62%)",
-          color: "#F1EEFA",
-          overflow: "hidden",
-        }}
-      >
-        <RadarLoading />
-      </div>
-    );
-  }
+  if ((loading && !data) || (!minElapsed && !error)) return <RadarLoading />;
+
+  const seats = data?.classradarSeats ?? [];
+  const count = (status: Status) => seats.filter((seat) => seat.status === status).length;
+  const attention = needsAttention(seats);
+  const selectedSeat = seats.find((seat) => seat.studentEmail === selected);
+  const teacherEmail = data?.classradarStatus.userEmail;
 
   return (
-    <div
-      style={{
-        // Exactly the screen height left by erxes; scrolls only when too small.
-        height: "100%",
-        overflow: "auto",
-        boxSizing: "border-box",
-        background: "radial-gradient(1100px 600px at 50% 0%, #1E1040 0%, #0B0716 62%)",
-        color: "#F1EEFA",
-        display: "flex",
-        flexDirection: "column",
-        // Centered and capped, so it sits right with the erxes sidebar open or closed.
-        alignItems: "center",
-        gap: 16,
-        paddingBottom: 20,
-      }}
-    >
-      <div
-        className="classradar:flex classradar:flex-wrap classradar:items-center classradar:justify-between classradar:gap-4"
-        style={{ ...column, paddingTop: 24 }}
-      >
-        <div className="classradar:flex classradar:flex-wrap classradar:items-center classradar:gap-4">
+    <Tooltip.Provider delayDuration={200}>
+      <div className="classradar:mx-auto classradar:flex classradar:h-full classradar:w-full classradar:max-w-7xl classradar:flex-col classradar:gap-4 classradar:overflow-auto classradar:p-4 classradar:md:p-6">
+        <div className="classradar:flex classradar:flex-wrap classradar:items-center classradar:justify-between classradar:gap-3">
           <form
-            className="classradar:flex classradar:items-center classradar:gap-2"
+            className="classradar:flex classradar:flex-wrap classradar:items-center classradar:gap-3"
             onSubmit={(event) => {
               event.preventDefault();
               const next = draft.trim();
               if (next) setClassCode(next);
             }}
           >
-            <label htmlFor="classradar-class" style={{ fontSize: 13, color: "#A9A3BF" }}>
-              Анги
-            </label>
-            <input
+            <Label htmlFor="classradar-class">Анги</Label>
+            <Input
               id="classradar-class"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onBlur={() => draft.trim() && setClassCode(draft.trim())}
-              style={{
-                width: 84,
-                fontFamily: DISPLAY,
-                fontSize: 22,
-                fontWeight: 700,
-                color: "#F1EEFA",
-                background: "transparent",
-                border: "1px solid rgba(255,255,255,0.12)",
-                borderRadius: 10,
-                padding: "4px 10px",
-              }}
+              className="classradar:w-24 classradar:font-semibold"
             />
+            <span className="classradar:text-sm classradar:text-muted-foreground">
+              {seats.length - count("absent")}/{seats.length} сурагч ирсэн
+            </span>
+            <Badge variant={error ? "destructive" : "success"} className="classradar:gap-1.5">
+              <span className="classradar:relative classradar:flex classradar:size-2">
+                <span className="classradar:absolute classradar:inset-0 classradar:rounded-full classradar:bg-current" />
+                {!error && (
+                  <span className="classradar-ping classradar:absolute classradar:inset-0 classradar:rounded-full classradar:border-2 classradar:border-current" />
+                )}
+              </span>
+              {error ? "Холболт тасарсан" : "Шууд"}
+            </Badge>
           </form>
-          <span style={{ fontSize: 14, color: "#A9A3BF" }}>
-            {present}/{seats.length} сурагч ирсэн
-          </span>
-          <span
-            className="classradar:flex classradar:items-center classradar:gap-2"
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: error ? "#FF8A8A" : "#3FE0B0",
-              padding: "6px 12px",
-              borderRadius: 999,
-              background: error ? "rgba(255,122,122,0.10)" : "rgba(63,224,176,0.10)",
-              border: `1px solid ${error ? "rgba(255,122,122,0.35)" : "rgba(63,224,176,0.35)"}`,
-            }}
-          >
-            <span style={{ position: "relative", width: 8, height: 8 }}>
-              <span
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  borderRadius: 4,
-                  background: "currentColor",
-                }}
-              />
-              {!error && (
-                <span
-                  className="classradar-ping"
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    borderRadius: 4,
-                    border: "2px solid currentColor",
-                    boxSizing: "border-box",
-                  }}
-                />
-              )}
-            </span>
-            {error ? "Холболт тасарсан" : "Шууд"}
-          </span>
-        </div>
-        <div
-          className="classradar:flex classradar:flex-wrap classradar:gap-4"
-          style={{ fontSize: 12, color: "#C7C1DA" }}
-        >
           {teacherEmail && (
-            <span
-              style={{
-                padding: "4px 10px",
-                borderRadius: 999,
-                border: "1px solid rgba(255,255,255,0.10)",
-              }}
-            >
+            <Badge variant="secondary" className="classradar:gap-1.5">
+              <IconRadar className="classradar:size-3.5" />
               Багш · {teacherEmail}
-            </span>
+            </Badge>
           )}
-          {LEGEND.map(({ status, text, mark }) => (
-            <span key={status}>
-              <span style={{ color: STATUS[status].fg }}>{mark}</span> {text}
-            </span>
+        </div>
+
+        <div className="classradar:flex classradar:flex-wrap classradar:gap-3">
+          {STATUSES.map((status) => (
+            <StatTile key={status} status={status} count={count(status)} />
           ))}
         </div>
-      </div>
 
-      <div className="classradar:flex classradar:flex-wrap classradar:gap-3" style={column}>
-        <StatTile status="working" label="● Ажиллаж байна" count={count("working")} />
-        <StatTile status="error" label="▲ Алдаатай" count={count("error")} />
-        <StatTile status="stuck" label="■ 5+ мин гацсан" count={count("stuck")} />
-        <StatTile status="absent" label="○ Ирээгүй" count={count("absent")} />
-      </div>
+        <div className="classradar:flex classradar:min-h-96 classradar:flex-1 classradar:flex-wrap classradar:gap-4 classradar:lg:flex-nowrap">
+          <div className="classradar:flex classradar:min-w-0 classradar:flex-[999_1_540px] classradar:flex-col">
+            {error && !data ? (
+              <Empty className="classradar:rounded-xl classradar:border classradar:border-border">
+                <Empty.Header>
+                  <Empty.Media variant="icon">
+                    <IconAlertTriangle />
+                  </Empty.Media>
+                  <Empty.Title>Мэдээлэл авч чадсангүй</Empty.Title>
+                  <Empty.Description>{error.message}</Empty.Description>
+                </Empty.Header>
+                <Empty.Content>
+                  <Button onClick={() => refetch()}>
+                    <IconRefresh />
+                    Дахин оролдох
+                  </Button>
+                </Empty.Content>
+              </Empty>
+            ) : seats.length === 0 ? (
+              <Empty className="classradar:rounded-xl classradar:border classradar:border-border">
+                <Empty.Header>
+                  <Empty.Media variant="icon">
+                    <IconRadar />
+                  </Empty.Media>
+                  <Empty.Title>{classCode} ангид сурагч алга</Empty.Title>
+                  <Empty.Description>
+                    Сурагчид VS Code extension-ээ асаагаад файлаа хадгалмагц энд гарч ирнэ.
+                  </Empty.Description>
+                </Empty.Header>
+              </Empty>
+            ) : (
+              <SeatMap seats={seats} selected={selected} onPick={setSelected} />
+            )}
+          </div>
 
-      <main
-        className="classradar:flex classradar:flex-wrap classradar:justify-center classradar:gap-6 classradar:lg:flex-nowrap"
-        style={{ ...column, flex: "1 1 0", minHeight: 380, alignItems: "stretch" }}
-      >
-        <div
-          style={{
-            flex: "999 1 540px",
-            minWidth: 0,
-            maxWidth: 860,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          {error && !data ? (
-            <div>
-              <Notice>{`Мэдээлэл авч чадсангүй: ${error.message}`}</Notice>
-              <button
-                type="button"
-                onClick={() => refetch()}
-                style={{
-                  marginTop: 12,
-                  padding: "10px 16px",
-                  borderRadius: 10,
-                  border: 0,
-                  color: "#fff",
-                  background: ACCENT,
-                  cursor: "pointer",
-                }}
-              >
-                Дахин оролдох
-              </button>
+          <ScrollArea className="classradar:min-h-0 classradar:flex-[1_1_300px] classradar:lg:max-w-sm">
+            <div className="classradar:flex classradar:flex-col classradar:gap-4">
+              {selectedSeat && <SeatDetail seat={selectedSeat} onClose={() => setSelected(null)} />}
+              <AttentionList seats={attention} selected={selected} onPick={setSelected} />
+              <TopErrors items={data?.classradarTopErrors ?? []} />
             </div>
-          ) : seats.length === 0 ? (
-            <Notice>
-              {`${classCode} ангид сурагч алга байна. Сурагчид VS Code extension-ээ асаагаад файлаа хадгалмагц энд гарч ирнэ.`}
-            </Notice>
-          ) : (
-            <SeatMap seats={seats} selected={selected} onPick={setSelected} />
-          )}
+          </ScrollArea>
         </div>
-
-        <aside
-          className="classradar:flex classradar:flex-col classradar:gap-5"
-          style={{ flex: "1 1 280px", maxWidth: 360, minWidth: 0, minHeight: 0, overflowY: "auto" }}
-        >
-          {selectedSeat && <SeatDetail seat={selectedSeat} onClose={() => setSelected(null)} />}
-
-          <section
-            aria-labelledby="classradar-attention"
-            className="classradar:flex classradar:flex-col classradar:gap-2"
-          >
-            <h2 id="classradar-attention" style={panelHeading}>
-              АНХААРАХ · {attention.length}
-            </h2>
-            <div style={panel}>
-              {loading && !data ? (
-                <div className="classradar:animate-pulse" style={{ height: 120 }} />
-              ) : attention.length === 0 ? (
-                <div style={{ padding: "14px 0", fontSize: 13, color: "#3FE0B0" }}>
-                  ● Бүгд ажиллаж байна
-                </div>
-              ) : (
-                attention.slice(0, 6).map((seat, index) => {
-                  const look = STATUS[seat.status];
-                  return (
-                    <button
-                      key={seat.studentEmail}
-                      type="button"
-                      onClick={() => setSelected(seat.studentEmail)}
-                      aria-pressed={selected === seat.studentEmail}
-                      className="classradar:flex classradar:w-full classradar:items-center classradar:gap-3"
-                      style={{
-                        padding: "11px 0",
-                        background: "transparent",
-                        border: 0,
-                        borderBottom:
-                          index < Math.min(attention.length, 6) - 1
-                            ? "1px solid rgba(255,255,255,0.06)"
-                            : 0,
-                        color: "inherit",
-                        textAlign: "left",
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: MONO,
-                          fontSize: 11,
-                          padding: "3px 6px",
-                          borderRadius: 6,
-                          color: look.fg,
-                          border: `1px solid ${look.fg}`,
-                          minWidth: 30,
-                          textAlign: "center",
-                        }}
-                      >
-                        {seat.seat ?? "—"}
-                      </span>
-                      <span className="classradar:flex classradar:min-w-0 classradar:flex-1 classradar:flex-col">
-                        <span style={{ fontSize: 13, fontWeight: 700 }}>{firstName(seat)}</span>
-                        <span
-                          className="classradar:truncate"
-                          style={{ fontSize: 12, color: "#A9A3BF" }}
-                        >
-                          {seat.errorTitle ?? "—"}
-                        </span>
-                      </span>
-                      <span className="classradar:flex classradar:flex-col classradar:items-end classradar:gap-1">
-                        <span style={{ fontSize: 12, fontWeight: 800, color: look.fg }}>
-                          {seat.status === "stuck" ? `${seat.errorMinutes} мин` : "шинэ"}
-                        </span>
-                        <Dots used={seat.hintsUsed} size={7} />
-                      </span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </section>
-
-          <section
-            aria-labelledby="classradar-top"
-            className="classradar:flex classradar:flex-col classradar:gap-2"
-          >
-            <h2 id="classradar-top" style={panelHeading}>
-              ДАВТАГДСАН АЛДАА · ӨНӨӨДӨР
-            </h2>
-            <div style={panel}>
-              {loading && !data ? (
-                <div className="classradar:animate-pulse" style={{ height: 150 }} />
-              ) : topErrors.length === 0 ? (
-                <div style={{ padding: "14px 0", fontSize: 13, color: "#A9A3BF" }}>
-                  Өнөөдөр давтагдсан алдаа алга.
-                </div>
-              ) : (
-                topErrors.map((item, index) => {
-                  const share = item.count / Math.max(...topErrors.map((t) => t.count));
-                  return (
-                    <div
-                      key={item.normalizedKey}
-                      className="classradar:flex classradar:flex-col classradar:gap-1.5"
-                      style={{
-                        padding: "12px 0",
-                        borderBottom:
-                          index < topErrors.length - 1 ? "1px solid rgba(255,255,255,0.06)" : 0,
-                      }}
-                    >
-                      <div className="classradar:flex classradar:items-center classradar:justify-between classradar:gap-3">
-                        <span style={{ fontSize: 14, fontWeight: 600 }}>{item.title}</span>
-                        <span style={{ fontFamily: DISPLAY, fontSize: 18, color: "#B9A2FF" }}>
-                          {item.count}
-                        </span>
-                      </div>
-                      <div
-                        aria-hidden
-                        style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)" }}
-                      >
-                        <div
-                          style={{
-                            width: `${Math.round(share * 100)}%`,
-                            height: "100%",
-                            borderRadius: 2,
-                            background: "linear-gradient(90deg, #5629B6, #B9A2FF)",
-                            transition: "width 0.4s ease",
-                          }}
-                        />
-                      </div>
-                      <span
-                        className="classradar:truncate"
-                        title={item.sampleMessage}
-                        style={{ fontFamily: MONO, fontSize: 11, color: "#A9A3BF" }}
-                      >
-                        {item.sampleMessage}
-                      </span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </section>
-        </aside>
-      </main>
-    </div>
+      </div>
+    </Tooltip.Provider>
   );
 };
