@@ -22,11 +22,13 @@ test("fallback matches common errors and has a generic default", () => {
     const result = fallbackExplanation(message);
     assert.notEqual(result, generic, message);
     assert.equal(result.hints.length, 3);
+    assert.ok(result.title.length > 0, message);
   }
   assert.equal(generic.hints.length, 3);
 });
 
 const good = {
+  title: "Нэр танигдсангүй",
   explanation: "Компьютер энэ нэрийг танихгүй байна.",
   hints: ["Нэрийг хаана үүсгэснээ хай.", "Үсгүүдийг харьцуул.", "Хоёр мөрийн нэрийг тулгаж үз."],
 };

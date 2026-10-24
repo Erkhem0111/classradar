@@ -74,11 +74,16 @@ export const typeDefs = gql`
   type ClassradarErrorHelp {
     errorId: String!
     message: String!
+    line: Int!
+    "A few words naming the problem."
+    title: String!
     explanation: String!
     "Only the hints revealed so far (hintsUsed of them)."
     hints: [String!]!
     hintsUsed: Int!
     hintsTotal: Int!
+    "The student pressed Ойлголоо (understood)."
+    understood: Boolean!
     source: ClassradarExplanationSource!
     model: String
   }
@@ -94,6 +99,8 @@ export const typeDefs = gql`
     classradarReportError(input: ClassradarErrorInput!): ClassradarError!
     "Reveals the next hint (at most 3) and records it in hintsUsed."
     classradarRevealHint(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
+    "Records that the student understood the error (first press wins)."
+    classradarMarkUnderstood(errorId: String!, studentEmail: String!): ClassradarErrorHelp!
   }
 `;
 
@@ -137,7 +144,14 @@ const ownedErrorFilter = ({ errorId, studentEmail }: HelpArgs, subdomain: string
 };
 
 const toHelp = async (
-  error: { _id: unknown; message: string; normalizedKey: string; hintsUsed: number } | null,
+  error: {
+    _id: unknown;
+    message: string;
+    line: number;
+    normalizedKey: string;
+    hintsUsed: number;
+    understoodAt?: Date | null;
+  } | null,
   subdomain: string,
 ) => {
   if (!error) throw new GraphQLError("Error not found", { extensions: { code: "NOT_FOUND" } });
@@ -146,10 +160,13 @@ const toHelp = async (
   return {
     errorId: String(error._id),
     message: error.message,
+    line: error.line,
+    title: help.title,
     explanation: help.explanation,
     hints: help.hints.slice(0, hintsUsed),
     hintsUsed,
     hintsTotal: HINTS_TOTAL,
+    understood: Boolean(error.understoodAt),
     source: help.source,
     model: help.model,
   };
@@ -229,6 +246,15 @@ export const resolvers: GraphQLResolverMap<Context> = {
         { new: true },
       ).lean();
       return toHelp(updated ?? (await ClassradarErrors.findOne(filter).lean()), subdomain);
+    },
+
+    classradarMarkUnderstood: async (_parent, args: HelpArgs, { subdomain }) => {
+      const filter = ownedErrorFilter(args, subdomain);
+      await ClassradarErrors.updateOne(
+        { ...filter, understoodAt: null },
+        { $set: { understoodAt: new Date() } },
+      );
+      return toHelp(await ClassradarErrors.findOne(filter).lean(), subdomain);
     },
   },
 };

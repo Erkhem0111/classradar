@@ -4,7 +4,8 @@ const REPORT_ERROR = `mutation ClassradarReportError($input: ClassradarErrorInpu
   classradarReportError(input: $input) { _id normalizedKey }
 }`;
 
-const HELP_FIELDS = "errorId explanation hints hintsUsed hintsTotal source model";
+const HELP_FIELDS =
+  "errorId message line title explanation hints hintsUsed hintsTotal understood source model";
 
 const ERROR_HELP = `query ClassradarErrorHelp($errorId: String!, $studentEmail: String!) {
   classradarErrorHelp(errorId: $errorId, studentEmail: $studentEmail) { ${HELP_FIELDS} }
@@ -14,12 +15,21 @@ const REVEAL_HINT = `mutation ClassradarRevealHint($errorId: String!, $studentEm
   classradarRevealHint(errorId: $errorId, studentEmail: $studentEmail) { ${HELP_FIELDS} }
 }`;
 
+const MARK_UNDERSTOOD = `mutation ClassradarMarkUnderstood($errorId: String!, $studentEmail: String!) {
+  classradarMarkUnderstood(errorId: $errorId, studentEmail: $studentEmail) { ${HELP_FIELDS} }
+}`;
+
 export type ErrorHelp = {
   errorId: string;
+  message: string;
+  /** 1-based. */
+  line: number;
+  title: string;
   explanation: string;
   hints: string[];
   hintsUsed: number;
   hintsTotal: number;
+  understood: boolean;
   source: "gemma" | "fallback";
   model: string | null;
 };
@@ -84,5 +94,14 @@ export const revealHint = (gatewayUrl: string, errorId: string, studentEmail: st
     REVEAL_HINT,
     { errorId, studentEmail },
     "classradarRevealHint",
+    HELP_TIMEOUT_MS,
+  );
+
+export const markUnderstood = (gatewayUrl: string, errorId: string, studentEmail: string) =>
+  request<ErrorHelp>(
+    gatewayUrl,
+    MARK_UNDERSTOOD,
+    { errorId, studentEmail },
+    "classradarMarkUnderstood",
     HELP_TIMEOUT_MS,
   );

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { SentTracker, buildReport, buildSnippet } from "./payload.ts";
+import { SentTracker, buildReport, buildSnippet, pickPrimaryError } from "./payload.ts";
 
 const identity = { studentEmail: "bat@school.mn", classCode: "10A", seat: "A1" };
 const lines = ["a = 1", "b = 2", "print(c)", "d = 4", "e = 5"];
@@ -35,4 +35,14 @@ test("tracker sends each error once and retries forgotten ones", () => {
   // Fixed then reintroduced: reported again.
   assert.deepEqual(tracker.diff("main.py", []), []);
   assert.deepEqual(tracker.diff("main.py", [a]), [a]);
+});
+
+test("primary error is the first one in the file", () => {
+  const errors = [
+    { line: 7, character: 0, message: "c" },
+    { line: 2, character: 9, message: "b" },
+    { line: 2, character: 3, message: "a" },
+  ];
+  assert.equal(pickPrimaryError(errors)?.message, "a");
+  assert.equal(pickPrimaryError([]), undefined);
 });

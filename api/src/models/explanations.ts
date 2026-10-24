@@ -6,6 +6,7 @@ const explanationSchema = new Schema(
   {
     subdomain: { type: String, required: true },
     normalizedKey: { type: String, required: true },
+    title: { type: String, default: "" },
     explanation: { type: String, required: true },
     hints: { type: [String], required: true },
     model: { type: String, required: true },

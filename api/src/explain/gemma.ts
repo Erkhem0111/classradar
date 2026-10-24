@@ -11,15 +11,17 @@ export type GemmaConfig = {
 
 const SYSTEM_PROMPT = `Чи 13-18 насны програмчлал сурч буй сурагчдад туслах багш.
 Сурагч англи хэл дээрх алдааны мессеж явуулна. Чи:
+- "title": асуудлыг 2-4 үгээр нэрлэ (жишээ нь "Хаалт хаагдаагүй байна").
 - "explanation": алдаа юу гэсэн үг болохыг 1-2 өгүүлбэрээр энгийн монгол хэлээр тайлбарла.
 - "hints": яг 3 зөвлөгөө, тус бүр 1 өгүүлбэр, өөр өөр өнцгөөс, давхардалгүй:
   1) Кодын хаана нь хайх вэ. 2) Яаж шалгаж, туршиж үзэх вэ. 3) Энэ алдааны цаад санаа, дүрэм.
 ХАТУУ ДҮРЭМ: хариуг хэзээ ч шууд бүү хэл, засварласан код бүү бич, код блок бүү ашигла.
-Сурагч өөрөө олох ёстой. Зөвхөн JSON буцаа: {"explanation": "...", "hints": ["...", "...", "..."]}`;
+Сурагч өөрөө олох ёстой. Зөвхөн JSON буцаа: {"title": "...", "explanation": "...", "hints": ["...", "...", "..."]}`;
 
 const sentence = z.string().trim().min(5).max(400);
 
 const explanationSchema = z.object({
+  title: z.string().trim().min(2).max(60),
   explanation: sentence,
   hints: z.tuple([sentence, sentence, sentence]),
 });
@@ -45,9 +47,9 @@ export const parseGemmaReply = (content: string): Explanation | null => {
   try {
     const result = explanationSchema.safeParse(JSON.parse(json));
     if (!result.success) return null;
-    const { explanation, hints } = result.data;
-    if ([explanation, ...hints].some(looksLikeCode)) return null;
-    return { explanation, hints };
+    const { title, explanation, hints } = result.data;
+    if ([title, explanation, ...hints].some(looksLikeCode)) return null;
+    return { title, explanation, hints };
   } catch {
     return null;
   }

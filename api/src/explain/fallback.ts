@@ -5,6 +5,8 @@
 // a concrete way to check it, the idea behind it. They never contain the fix.
 
 export type Explanation = {
+  /** A few words naming the problem, shown as the hover heading. */
+  title: string;
   explanation: string;
   hints: [string, string, string];
 };
@@ -14,6 +16,7 @@ type Entry = Explanation & { match: RegExp };
 const catalog: Entry[] = [
   {
     match: /nameerror|cannot find name|is not defined/i,
+    title: "Нэр танигдсангүй",
     explanation:
       "Компьютер энэ нэртэй хувьсагч эсвэл функцийг танихгүй байна. Чи үүнийг өмнө нь үүсгээгүй, эсвэл нэрийг нь өөрөөр бичсэн байж магадгүй.",
     hints: [
@@ -24,6 +27,7 @@ const catalog: Entry[] = [
   },
   {
     match: /indentationerror|expected an indented block|unexpected indent|unindent/i,
+    title: "Догол буруу байна",
     explanation:
       "Python кодын мөрийн эхэнд байгаа зай (догол) буруу байна. Python догол мөрөөр аль код аль блокт хамаарахыг ойлгодог.",
     hints: [
@@ -35,6 +39,7 @@ const catalog: Entry[] = [
   {
     match:
       /was never closed|unterminated|unexpected eof|eol while scanning|'\)' expected|'}' expected|unclosed/i,
+    title: "Хаалт хаагдаагүй байна",
     explanation:
       "Нээсэн хаалт эсвэл хашилт хаагдаагүй байна. Компьютер төгсгөлийг нь хайсаар файлын төгсгөлд хүрсэн.",
     hints: [
@@ -46,6 +51,7 @@ const catalog: Entry[] = [
   {
     match:
       /can only concatenate|unsupported operand|must be str, not|cannot be applied to types|is not assignable to/i,
+    title: "Төрөл таарахгүй байна",
     explanation:
       "Хоёр өөр төрлийн утгыг хамт ашиглаж байна. Жишээ нь текст ба тоог шууд нэмэх боломжгүй.",
     hints: [
@@ -56,6 +62,7 @@ const catalog: Entry[] = [
   },
   {
     match: /';' expected|missing semicolon|expected ';'/i,
+    title: "Тэмдэг дутуу байна",
     explanation: "Компьютер энд мөрийг дуусгах тэмдэг эсвэл өөр тэмдэг хүлээж байсан ч олсонгүй.",
     hints: [
       "Алдаа заасан мөрийн өмнөх мөрийн төгсгөлийг хар.",
@@ -65,6 +72,7 @@ const catalog: Entry[] = [
   },
   {
     match: /indexerror|index out of range|out of bounds/i,
+    title: "Жагсаалтаас хэтэрсэн",
     explanation:
       "Жагсаалтад байхгүй байрлалын элементийг авах гэж байна. Жагсаалтын дугаарлалт 0-ээс эхэлдэг.",
     hints: [
@@ -75,6 +83,7 @@ const catalog: Entry[] = [
   },
   {
     match: /zerodivisionerror|division by zero|divide by zero/i,
+    title: "Тэгд хуваасан",
     explanation: "Тоог тэгд хувааж байна. Математикт тэгд хуваах боломжгүй.",
     hints: [
       "Алдаатай мөрөнд `/` эсвэл `%` тэмдгийн баруун талд байгаа утгыг хар.",
@@ -84,6 +93,7 @@ const catalog: Entry[] = [
   },
   {
     match: /modulenotfounderror|no module named|cannot find module|importerror/i,
+    title: "Модуль олдсонгүй",
     explanation: "Импортлох гэж буй модуль эсвэл файл олдсонгүй.",
     hints: [
       "`import` мөр дээрх модулийн нэрийг хар.",
@@ -94,6 +104,7 @@ const catalog: Entry[] = [
   {
     match:
       /attributeerror|has no attribute|property .* does not exist|is not a function|cannot read propert/i,
+    title: "Ийм функц, шинж чанар алга",
     explanation: "Энэ утгад чиний дуудаж буй шинж чанар эсвэл функц байхгүй байна.",
     hints: [
       "Цэгийн (`.`) өмнөх утга болон араас нь бичсэн нэрийг хар.",
@@ -104,6 +115,7 @@ const catalog: Entry[] = [
   {
     match:
       /syntaxerror|invalid syntax|unexpected token|expression expected|declaration or statement expected/i,
+    title: "Бичлэгийн алдаа",
     explanation:
       "Кодын бичлэгийн дүрэм зөрчигдсөн байна. Компьютер энэ мөрийг уншиж ойлгож чадсангүй.",
     hints: [
@@ -115,6 +127,7 @@ const catalog: Entry[] = [
 ];
 
 const generic: Explanation = {
+  title: "Код ажиллахгүй байна",
   explanation:
     "Компьютер энэ мөрийг ажиллуулж чадсангүй. Алдааны мессеж асуудлын байрлал болон төрлийг хэлж байна.",
   hints: [

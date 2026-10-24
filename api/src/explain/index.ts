@@ -20,8 +20,8 @@ const gemmaConfig: GemmaConfig | null = env.GEMMA_URL
 const inFlight = new Map<string, Promise<ErrorExplanation>>();
 
 const fromFallback = (message: string): ErrorExplanation => {
-  const { explanation, hints } = fallbackExplanation(message);
-  return { explanation, hints, source: "fallback", model: null };
+  const { title, explanation, hints } = fallbackExplanation(message);
+  return { title, explanation, hints, source: "fallback", model: null };
 };
 
 const generate = async (
@@ -33,6 +33,8 @@ const generate = async (
   if (cached && cached.hints.length === 3) {
     const [a = "", b = "", c = ""] = cached.hints;
     return {
+      // Entries cached before titles existed borrow the built-in one.
+      title: cached.title || fallbackExplanation(message).title,
       explanation: cached.explanation,
       hints: [a, b, c],
       source: "gemma",

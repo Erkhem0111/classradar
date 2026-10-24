@@ -54,6 +54,15 @@ export const buildReport = (
   source: "diagnostic",
 });
 
+/**
+ * The error worth showing: the first one in the file. Later errors are often
+ * knock-on effects of it (one missing bracket can produce several), and
+ * beginners are taught to fix the first error first.
+ */
+export const pickPrimaryError = <T extends { line: number; character: number }>(
+  errors: readonly T[],
+): T | undefined => [...errors].sort((a, b) => a.line - b.line || a.character - b.character)[0];
+
 export const reportKey = (report: Pick<ErrorReport, "file" | "line" | "message">) =>
   `${report.file}\u0000${report.line}\u0000${report.message}`;
 

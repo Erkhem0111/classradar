@@ -1,11 +1,27 @@
 import * as vscode from "vscode";
-import { fetchHelp, revealHint, sendReport } from "./client";
-import { NOT_SENT_YET, OFFLINE, REVEAL_COMMAND, SHOW_TIP_COMMAND, renderHelp } from "./hover";
-import { type StudentIdentity, SentTracker, buildReport, reportKey } from "./payload";
+import { fetchHelp, markUnderstood, revealHint, sendReport } from "./client";
+import {
+  HOVER_COMMANDS,
+  OFFLINE,
+  REVEAL_COMMAND,
+  SHOW_TIP_COMMAND,
+  UNDERSTOOD_COMMAND,
+  renderHelp,
+} from "./hover";
+import {
+  type StudentIdentity,
+  SentTracker,
+  buildReport,
+  pickPrimaryError,
+  reportKey,
+} from "./payload";
 
+// Errors are read only once the student has stopped typing for this long, so
+// half-typed code (autosave included) is never reported.
+const QUIET_MS = 3000;
 // Language servers often publish diagnostics a moment after the save, so a
-// saved file stays "watched" for this long and late diagnostics still count.
-const WATCH_AFTER_SAVE_MS = 4000;
+// saved file stays "watched" this long after going quiet.
+const WATCH_AFTER_SAVE_MS = QUIET_MS + 4000;
 const SETTLE_MS = 800;
 
 const readConfig = () => {
@@ -30,6 +46,7 @@ export const activate = (context: vscode.ExtensionContext) => {
   const sentIds = new Map<string, string>();
   const watched = new Map<string, number>();
   const timers = new Map<string, NodeJS.Timeout>();
+  const lastEditAt = new Map<string, number>();
   let sentCount = 0;
 
   const showStatus = (state: "ok" | "offline" | "off") => {
@@ -57,20 +74,23 @@ export const activate = (context: vscode.ExtensionContext) => {
     const document = vscode.workspace.textDocuments.find(
       (doc) => doc.uri.toString() === uri.toString(),
     );
-    if (!document) return;
+    // Edited again since the save: wait for the next save.
+    if (!document || document.isDirty) return;
+    const quietFor = Date.now() - (lastEditAt.get(uri.toString()) ?? 0);
+    if (quietFor < QUIET_MS) return schedule(uri, QUIET_MS - quietFor);
+
     const file = vscode.workspace.asRelativePath(uri, false);
     const lines = Array.from({ length: document.lineCount }, (_, i) => document.lineAt(i).text);
 
-    const reports = vscode.languages
-      .getDiagnostics(uri)
-      .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error)
-      .map((diagnostic) =>
-        buildReport(
-          identity,
-          { file, line: diagnostic.range.start.line, message: diagnostic.message },
-          lines,
-        ),
-      );
+    const primary = pickPrimaryError(
+      vscode.languages
+        .getDiagnostics(uri)
+        .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error)
+        .map((diagnostic) => ({ ...diagnostic.range.start, message: diagnostic.message })),
+    );
+    const reports = primary
+      ? [buildReport(identity, { file, line: primary.line, message: primary.message }, lines)]
+      : [];
 
     let offline = false;
     for (const report of tracker.diff(file, reports)) {
@@ -90,7 +110,7 @@ export const activate = (context: vscode.ExtensionContext) => {
     showStatus(offline ? "offline" : "ok");
   };
 
-  const schedule = (uri: vscode.Uri) => {
+  function schedule(uri: vscode.Uri, delayMs = SETTLE_MS) {
     const key = uri.toString();
     clearTimeout(timers.get(key));
     timers.set(
@@ -98,9 +118,9 @@ export const activate = (context: vscode.ExtensionContext) => {
       setTimeout(() => {
         timers.delete(key);
         void reportFile(uri);
-      }, SETTLE_MS),
+      }, delayMs),
     );
-  };
+  }
 
   // Which tip each error's hover shows; unset = the newest revealed one.
   const tipViews = new Map<string, number>();
@@ -108,7 +128,7 @@ export const activate = (context: vscode.ExtensionContext) => {
   const markdown = (value: string) => {
     const md = new vscode.MarkdownString(value);
     md.supportHtml = true;
-    md.isTrusted = { enabledCommands: [REVEAL_COMMAND, SHOW_TIP_COMMAND] };
+    md.isTrusted = { enabledCommands: HOVER_COMMANDS };
     return md;
   };
 
@@ -136,8 +156,10 @@ export const activate = (context: vscode.ExtensionContext) => {
         { file, line: diagnostic.range.start.line, message: diagnostic.message },
         [],
       );
+      // Only the reported (first, settled) error gets our card; others keep
+      // just the editor's own hover.
       const errorId = sentIds.get(reportKey(report));
-      if (!errorId) return new vscode.Hover(markdown(NOT_SENT_YET), diagnostic.range);
+      if (!errorId) return undefined;
 
       const help = await fetchHelp(gatewayUrl, errorId, identity.studentEmail);
       if (!help.ok) {
@@ -181,7 +203,25 @@ export const activate = (context: vscode.ExtensionContext) => {
         await reopenHover(line, character);
       },
     ),
+    vscode.commands.registerCommand(
+      UNDERSTOOD_COMMAND,
+      async (errorId: unknown, line: unknown, character: unknown) => {
+        if (typeof errorId !== "string") return;
+        const { gatewayUrl, identity } = readConfig();
+        const result = await markUnderstood(gatewayUrl, errorId, identity.studentEmail);
+        if (!result.ok) {
+          log.appendLine(`✗ "ойлголоо" илгээж чадсангүй: ${result.error}`);
+          return;
+        }
+        log.appendLine(`✓ ойлгосон, ${result.value.hintsUsed} зөвлөгөөгөөр (${errorId})`);
+        await reopenHover(line, character);
+      },
+    ),
     status,
+    vscode.workspace.onDidChangeTextDocument((event) => {
+      if (event.contentChanges.length > 0)
+        lastEditAt.set(event.document.uri.toString(), Date.now());
+    }),
     vscode.workspace.onDidSaveTextDocument((document) => {
       if (document.uri.scheme !== "file") return;
       watched.set(document.uri.toString(), Date.now() + WATCH_AFTER_SAVE_MS);

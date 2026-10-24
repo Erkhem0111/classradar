@@ -17,6 +17,8 @@ const errorSchema = new Schema(
     snippet: { type: String, default: null },
     source: { type: String, enum: ERROR_SOURCES, required: true },
     hintsUsed: { type: Number, default: 0 },
+    // Set when the student presses "Ойлголоо" (understood) in the hover.
+    understoodAt: { type: Date, default: null },
     createdAt: { type: Date, default: () => new Date() },
   },
   { collection: "classradar_errors", versionKey: false },
