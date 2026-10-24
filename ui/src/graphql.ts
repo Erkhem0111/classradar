@@ -17,6 +17,9 @@ export const STATUS_QUERY = gql(`
 
 export const CLASS_RADAR_QUERY = gql(`
   query classradarDashboard($classCode: String!) {
+    classradarStatus {
+      userEmail
+    }
     classradarSeats(classCode: $classCode) {
       seat
       studentEmail

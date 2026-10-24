@@ -1,7 +1,8 @@
 import { useQuery } from "@apollo/client";
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { ClassradarDashboardQuery } from "~/gql/graphql";
 import { CLASS_RADAR_QUERY } from "../graphql";
+import { RadarLoading } from "./RadarLoading";
 
 // Visuals follow the "Багш · Ангийн радар" design: a dark violet room, the
 // seat map tilted like a classroom floor. The right column answers "who needs
@@ -15,6 +16,8 @@ type Status = Seat["status"];
 const ACCENT = "#5629B6";
 const POLL_MS = 5000;
 const SEATS_PER_ROW = 6;
+// The loading radar stays at least this long so it reads as a moment, not a flash.
+const MIN_LOADING_MS = 1200;
 
 const STATUS: Record<
   Status,
@@ -186,7 +189,8 @@ const SeatButton = ({
         color: seat.status === "absent" ? "#8C86A6" : "#F1EEFA",
         borderRadius: 12,
         padding: "8px 10px 9px",
-        minHeight: 64,
+        height: "100%",
+        minHeight: 52,
         background: look.face,
         border: selected ? "2px solid #FFFFFF" : look.border,
         boxShadow: selected ? `${look.shadow}, 0 0 0 4px rgba(255,255,255,0.12)` : look.shadow,
@@ -231,7 +235,16 @@ const SeatMap = ({
   return (
     <section
       aria-label="Ангийн суудлын зураг"
-      style={{ perspective: 1400, perspectiveOrigin: "50% 0%", maxWidth: 860, margin: "0 auto" }}
+      style={{
+        perspective: 1400,
+        perspectiveOrigin: "50% 0%",
+        maxWidth: 860,
+        width: "100%",
+        margin: "0 auto",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+      }}
     >
       <div
         style={{
@@ -247,9 +260,11 @@ const SeatMap = ({
             "0 50px 70px -30px rgba(124,77,255,0.5), inset 0 0 0 1px rgba(155,132,238,0.20)",
           display: "flex",
           flexDirection: "column",
-          gap: 22,
+          gap: 18,
           position: "relative",
           overflow: "hidden",
+          flex: 1,
+          minHeight: 0,
         }}
       >
         <div aria-hidden className="classradar-sweep" />
@@ -272,6 +287,10 @@ const SeatMap = ({
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, minmax(0, 1fr)) 28px repeat(3, minmax(0, 1fr))",
+            // Rows share the height left on screen, so the room always fits.
+            gridTemplateRows: `repeat(${rows.length}, minmax(0, 1fr))`,
+            flex: 1,
+            minHeight: 0,
             gap: "14px 12px",
             transformStyle: "preserve-3d",
             position: "relative",
@@ -428,7 +447,6 @@ const Notice = ({ children }: { children: string }) => (
   </div>
 );
 
-
 export const RadarDashboard = () => {
   const [classCode, setClassCode] = useState("10A");
   const [draft, setDraft] = useState("10A");
@@ -444,11 +462,37 @@ export const RadarDashboard = () => {
   const present = seats.length - count("absent");
   const attention = needsAttention(seats);
   const selectedSeat = seats.find((seat) => seat.studentEmail === selected);
+  const teacherEmail = data?.classradarStatus.userEmail;
+
+  const [minElapsed, setMinElapsed] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setMinElapsed(true), MIN_LOADING_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if ((loading && !data) || (!minElapsed && !error)) {
+    return (
+      <div
+        style={{
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          background: "radial-gradient(1200px 600px at 50% 70%, #24124F 0%, #0B0716 62%)",
+          color: "#F1EEFA",
+          overflow: "hidden",
+        }}
+      >
+        <RadarLoading />
+      </div>
+    );
+  }
 
   return (
     <div
       style={{
-        minHeight: "100%",
+        // Exactly the screen height left by erxes; scrolls only when too small.
+        height: "100%",
+        overflow: "auto",
         boxSizing: "border-box",
         background: "radial-gradient(1100px 600px at 50% 0%, #1E1040 0%, #0B0716 62%)",
         color: "#F1EEFA",
@@ -456,8 +500,8 @@ export const RadarDashboard = () => {
         flexDirection: "column",
         // Centered and capped, so it sits right with the erxes sidebar open or closed.
         alignItems: "center",
-        gap: 20,
-        paddingBottom: 40,
+        gap: 16,
+        paddingBottom: 20,
       }}
     >
       <div
@@ -538,6 +582,17 @@ export const RadarDashboard = () => {
           className="classradar:flex classradar:flex-wrap classradar:gap-4"
           style={{ fontSize: 12, color: "#C7C1DA" }}
         >
+          {teacherEmail && (
+            <span
+              style={{
+                padding: "4px 10px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.10)",
+              }}
+            >
+              Багш · {teacherEmail}
+            </span>
+          )}
           {LEGEND.map(({ status, text, mark }) => (
             <span key={status}>
               <span style={{ color: STATUS[status].fg }}>{mark}</span> {text}
@@ -554,16 +609,19 @@ export const RadarDashboard = () => {
       </div>
 
       <main
-        className="classradar:flex classradar:flex-wrap classradar:items-start classradar:justify-center classradar:gap-6"
-        style={column}
+        className="classradar:flex classradar:flex-wrap classradar:justify-center classradar:gap-6 classradar:lg:flex-nowrap"
+        style={{ ...column, flex: "1 1 0", minHeight: 380, alignItems: "stretch" }}
       >
-        <div style={{ flex: "999 1 540px", minWidth: 0, maxWidth: 860 }}>
-          {loading && !data ? (
-            <div
-              className="classradar:animate-pulse"
-              style={{ height: 420, borderRadius: 22, background: "rgba(155,132,238,0.08)" }}
-            />
-          ) : error && !data ? (
+        <div
+          style={{
+            flex: "999 1 540px",
+            minWidth: 0,
+            maxWidth: 860,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          {error && !data ? (
             <div>
               <Notice>{`Мэдээлэл авч чадсангүй: ${error.message}`}</Notice>
               <button
@@ -593,7 +651,7 @@ export const RadarDashboard = () => {
 
         <aside
           className="classradar:flex classradar:flex-col classradar:gap-5"
-          style={{ flex: "1 1 280px", maxWidth: 360, minWidth: 0 }}
+          style={{ flex: "1 1 280px", maxWidth: 360, minWidth: 0, minHeight: 0, overflowY: "auto" }}
         >
           {selectedSeat && <SeatDetail seat={selectedSeat} onClose={() => setSelected(null)} />}
 

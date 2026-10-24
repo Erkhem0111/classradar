@@ -38,7 +38,7 @@ export const IndexPage = () => (
         </Button>
       </PageHeader.End>
     </PageHeader>
-    <div className="classradar:flex-1 classradar:overflow-auto">
+    <div className="classradar:min-h-0 classradar:flex-1 classradar:overflow-hidden">
       <RadarDashboard />
     </div>
   </div>

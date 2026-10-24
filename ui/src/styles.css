@@ -152,3 +152,30 @@
     animation: none;
   }
 }
+
+/* Loading radar (from the design). */
+@keyframes classradar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes classradar-load {
+  0% {
+    width: 12%;
+  }
+  100% {
+    width: 78%;
+  }
+}
+.classradar-spin {
+  animation: classradar-spin 3.2s linear infinite;
+}
+.classradar-load {
+  animation: classradar-load 2.4s ease-in-out infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .classradar-spin,
+  .classradar-load {
+    animation: none;
+  }
+}
