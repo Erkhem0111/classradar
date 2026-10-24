@@ -60,6 +60,12 @@
       }
     }
   },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true,
+      "description": "Only reads diagnostics; never runs workspace code."
+    }
+  },
   "activationEvents": [
     "onStartupFinished"
   ],
