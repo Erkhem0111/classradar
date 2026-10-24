@@ -27,7 +27,6 @@ const STATUS: Record<
     label: string;
     short: string;
     badge: "success" | "warning" | "destructive" | "secondary";
-    seat: string;
     text: string;
   }
 > = {
@@ -35,33 +34,62 @@ const STATUS: Record<
     label: "Ажиллаж байна",
     short: "OK",
     badge: "success",
-    seat: "classradar:border-success/50 classradar:bg-success/10",
     text: "classradar:text-success",
   },
   error: {
     label: "Алдаатай",
     short: "Алдаа",
     badge: "warning",
-    seat: "classradar:border-warning/60 classradar:bg-warning/15",
     text: "classradar:text-warning",
   },
   stuck: {
     label: "5+ мин гацсан",
     short: "Гацсан",
     badge: "destructive",
-    seat: "classradar:border-destructive/70 classradar:bg-destructive/15 classradar-alarm",
     text: "classradar:text-destructive",
   },
   absent: {
     label: "Ирээгүй",
     short: "Ирээгүй",
     badge: "secondary",
-    seat: "classradar:border-dashed classradar:border-border classradar:bg-transparent",
     text: "classradar:text-muted-foreground",
   },
 };
 
 const STATUSES: Status[] = ["working", "error", "stuck", "absent"];
+
+// The design's raised "keycap" seats: a top-lit gradient face, a solid 7px
+// edge underneath and a colored glow. erxes-ui has no equivalent, so these
+// come straight from the design.
+const SEAT_LOOK: Record<Status, { face: string; edge: string; shadow: string; tint: string }> = {
+  working: {
+    face: "linear-gradient(180deg, rgba(63,224,176,0.20), rgba(63,224,176,0.06))",
+    edge: "1px solid rgba(63,224,176,0.45)",
+    shadow:
+      "0 7px 0 #0D2A22, 0 14px 24px -8px rgba(63,224,176,0.35), inset 0 1px 0 rgba(255,255,255,0.10)",
+    tint: "rgba(63,224,176,",
+  },
+  error: {
+    face: "linear-gradient(180deg, rgba(255,181,71,0.22), rgba(255,181,71,0.06))",
+    edge: "1px solid rgba(255,181,71,0.50)",
+    shadow:
+      "0 7px 0 #33230A, 0 14px 24px -8px rgba(255,181,71,0.35), inset 0 1px 0 rgba(255,255,255,0.10)",
+    tint: "rgba(255,181,71,",
+  },
+  stuck: {
+    face: "linear-gradient(180deg, rgba(255,122,122,0.28), rgba(255,122,122,0.08))",
+    edge: "1px solid rgba(255,122,122,0.65)",
+    shadow:
+      "0 7px 0 #3A1414, 0 16px 30px -8px rgba(255,122,122,0.55), inset 0 1px 0 rgba(255,255,255,0.12)",
+    tint: "rgba(255,122,122,",
+  },
+  absent: {
+    face: "rgba(255,255,255,0.03)",
+    edge: "1px dashed rgba(255,255,255,0.16)",
+    shadow: "none",
+    tint: "rgba(140,134,166,",
+  },
+};
 
 const seatNumber = (seat: string | null) => {
   const number = Number(seat?.replace(/\D/g, ""));
@@ -152,11 +180,17 @@ const SeatButton = ({
           aria-pressed={selected}
           aria-label={`Суудал ${seat.seat ?? ""}, ${seat.name ?? seat.studentEmail}, ${statusText(seat)}`}
           className={cn(
-            "classradar:flex classradar:h-full classradar:min-h-14 classradar:w-full classradar:flex-col classradar:justify-between classradar:gap-1 classradar:rounded-lg classradar:border classradar:px-2.5 classradar:py-2 classradar:text-left classradar:shadow-xs classradar:transition-transform classradar:hover:-translate-y-0.5",
-            look.seat,
-            selected && "classradar:ring-2 classradar:ring-primary classradar:ring-offset-2",
+            "classradar:flex classradar:h-full classradar:min-h-14 classradar:w-full classradar:flex-col classradar:justify-between classradar:gap-1 classradar:rounded-xl classradar:px-2.5 classradar:py-2 classradar:text-left classradar:transition-transform classradar:hover:-translate-y-0.5",
+            seat.status === "stuck" && "classradar-alarm",
             seat.status === "absent" && "classradar:text-muted-foreground",
           )}
+          style={{
+            background: SEAT_LOOK[seat.status].face,
+            border: selected ? "2px solid #FFFFFF" : SEAT_LOOK[seat.status].edge,
+            boxShadow: selected
+              ? `${SEAT_LOOK[seat.status].shadow}, 0 0 0 4px rgba(255,255,255,0.12)`
+              : SEAT_LOOK[seat.status].shadow,
+          }}
         >
           <span className="classradar:flex classradar:items-center classradar:justify-between classradar:font-mono classradar:text-xs classradar:text-muted-foreground">
             {seat.seat ?? "—"}
@@ -196,47 +230,70 @@ const SeatMap = ({
 }) => {
   const rows = buildRows(seats);
   return (
-    <Card className="classradar:flex classradar:h-full classradar:min-h-0 classradar:flex-col">
-      <Card.Header className="classradar:items-center">
-        <div
-          aria-hidden
-          className="classradar:h-2 classradar:w-3/5 classradar:rounded-full classradar:bg-primary/70"
-        />
-        <Card.Description className="classradar:tracking-widest">САМБАР</Card.Description>
-      </Card.Header>
-      <Card.Content className="classradar:min-h-0 classradar:flex-1">
-        <div
-          role="group"
-          aria-label="Ангийн суудлын зураг"
-          className="classradar:grid classradar:h-full classradar:gap-3"
-          style={{
-            gridTemplateColumns: "repeat(3, minmax(0, 1fr)) 1.5rem repeat(3, minmax(0, 1fr))",
-            // Rows share the height left on screen, so the room always fits.
-            gridTemplateRows: `repeat(${rows.length}, minmax(0, 1fr))`,
-          }}
-        >
-          {rows.flatMap((row, r) => {
-            // Three seats, the aisle, three seats.
-            const cells = [...row.slice(0, 3), "aisle" as const, ...row.slice(3)];
-            return cells.map((seat, c) => {
-              const key = `${r}-${c}`;
-              if (seat === "aisle" || seat === null || seat === undefined) {
-                return <div key={key} aria-hidden />;
-              }
-              const id = seat.studentEmail;
-              return (
-                <SeatButton
-                  key={key}
-                  seat={seat}
-                  selected={selected === id}
-                  onPick={() => onPick(selected === id ? null : id)}
-                />
-              );
-            });
-          })}
-        </div>
-      </Card.Content>
-    </Card>
+    <div
+      className="classradar:h-full classradar:min-h-0"
+      style={{ perspective: 1400, perspectiveOrigin: "50% 0%" }}
+    >
+      <Card
+        className="classradar:relative classradar:flex classradar:h-full classradar:min-h-0 classradar:flex-col classradar:overflow-hidden"
+        style={{
+          transform: "rotateX(10deg)",
+          transformOrigin: "50% 0%",
+          borderRadius: 22,
+          backgroundColor: "#120A26",
+          backgroundImage:
+            "repeating-linear-gradient(0deg, rgba(155,132,238,0.07) 0 1px, transparent 1px 48px), repeating-linear-gradient(90deg, rgba(155,132,238,0.07) 0 1px, transparent 1px 48px)",
+          boxShadow:
+            "0 50px 70px -30px rgba(124,77,255,0.5), inset 0 0 0 1px rgba(155,132,238,0.20)",
+        }}
+      >
+        <div aria-hidden className="classradar-sweep" />
+        <Card.Header className="classradar:items-center">
+          <div
+            aria-hidden
+            className="classradar:h-2.5 classradar:w-3/5 classradar:rounded-full"
+            style={{
+              background:
+                "linear-gradient(90deg, rgba(138,99,255,0.2), #8A63FF, rgba(138,99,255,0.2))",
+              boxShadow: "0 0 28px rgba(138,99,255,0.8)",
+            }}
+          />
+          <Card.Description className="classradar:tracking-widest">САМБАР</Card.Description>
+        </Card.Header>
+        <Card.Content className="classradar:min-h-0 classradar:flex-1">
+          <div
+            role="group"
+            aria-label="Ангийн суудлын зураг"
+            className="classradar:grid classradar:h-full classradar:gap-3"
+            style={{
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr)) 1.5rem repeat(3, minmax(0, 1fr))",
+              // Rows share the height left on screen, so the room always fits.
+              gridTemplateRows: `repeat(${rows.length}, minmax(0, 1fr))`,
+            }}
+          >
+            {rows.flatMap((row, r) => {
+              // Three seats, the aisle, three seats.
+              const cells = [...row.slice(0, 3), "aisle" as const, ...row.slice(3)];
+              return cells.map((seat, c) => {
+                const key = `${r}-${c}`;
+                if (seat === "aisle" || seat === null || seat === undefined) {
+                  return <div key={key} aria-hidden />;
+                }
+                const id = seat.studentEmail;
+                return (
+                  <SeatButton
+                    key={key}
+                    seat={seat}
+                    selected={selected === id}
+                    onPick={() => onPick(selected === id ? null : id)}
+                  />
+                );
+              });
+            })}
+          </div>
+        </Card.Content>
+      </Card>
+    </div>
   );
 };
 
@@ -246,6 +303,11 @@ const StatTile = ({ status, count }: { status: Status; count: number }) => (
       "classradar:flex-1 classradar:basis-36",
       status === "stuck" && count > 0 && "classradar-alarm",
     )}
+    style={{
+      borderRadius: 16,
+      background: `${SEAT_LOOK[status].tint}0.08)`,
+      border: `1px solid ${SEAT_LOOK[status].tint}0.32)`,
+    }}
   >
     <Card.Content className="classradar:flex classradar:items-center classradar:justify-between classradar:gap-3 classradar:p-4">
       <Badge variant={STATUS[status].badge}>{STATUS[status].label}</Badge>
